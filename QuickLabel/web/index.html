@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickLabel — быстрая разметка датасетов</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ── Top bar ───────────────────────────────────────────── -->
+  <header id="topbar">
+    <div class="brand">QuickLabel</div>
+    <div class="proj-controls">
+      <select id="projectSelect" title="Открыть проект"></select>
+      <button id="newProjectBtn">+ Новый проект</button>
+      <button id="delProjectBtn" title="Удалить выбранный проект" disabled>🗑 Удалить</button>
+    </div>
+    <div class="spacer"></div>
+    <span id="samStatus" class="sam-status" title="Статус AI">AI: …</span>
+    <div class="export-menu">
+      <button id="exportBtn" class="primary" disabled>Экспорт ▾</button>
+      <div id="exportDropdown" class="dropdown hidden">
+        <button data-target="yolo">YOLO (detection / segmentation)</button>
+        <button data-target="coco">RF-DETR — COCO JSON (segmentation)</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="workspace" class="hidden">
+    <!-- ── Left: images ──────────────────────────────────── -->
+    <aside id="imagesPanel">
+      <div class="panel-head">
+        <span>Изображения</span>
+        <span id="imageCount" class="muted"></span>
+      </div>
+      <div class="panel-actions">
+        <button id="importFolderBtn">Импорт папки</button>
+        <button id="uploadBtn">Загрузить файлы</button>
+        <input type="file" id="uploadInput" accept="image/*" multiple hidden />
+      </div>
+      <ul id="imageList"></ul>
+    </aside>
+
+    <!-- ── Center: canvas ────────────────────────────────── -->
+    <section id="canvasPanel">
+      <div id="toolbar">
+        <button class="tool tool-cursor" data-tool="select" title="Выбор / перемещение рамок">↖</button>
+        <button class="tool" data-tool="box" title="Ручная рамка (прямоугольник) — клавиша 1">▭ Рамка</button>
+        <button class="tool" data-tool="poly" title="Ручной многоугольник: клики по точкам, замкнуть двойным кликом или Enter — клавиша 2">⬠ Полигон</button>
+        <button class="tool" data-tool="sam-point" title="SAM 2: клик по объекту — клавиша 3">● SAM-точка</button>
+        <button class="tool" data-tool="sam-box" title="SAM 2: рамка вокруг объекта — клавиша 4">⬚ SAM-рамка</button>
+        <div class="tool-sep"></div>
+        <div class="sam3-inline">
+          <input id="sam3Prompt" type="text" placeholder="SAM 3: класс/запрос (напр. car)" />
+          <button id="sam3AutoBtn" title="Найти объекты выбранного класса на текущем изображении">SAM 3 ►</button>
+        </div>
+        <div class="tool-sep"></div>
+        <button id="prevImg" title="Предыдущее">◀</button>
+        <button id="nextImg" title="Следующее">▶</button>
+      </div>
+
+      <div id="canvasWrap">
+        <canvas id="canvas"></canvas>
+        <div id="canvasHint" class="canvas-hint">Создайте/откройте проект и загрузите изображения</div>
+
+<!-- Floating zoom control (overlay, does not reflow the canvas) -->
+        <div id="zoomCtl" class="zoom-ctl hidden">
+          <button id="zoomOut" title="Уменьшить (колесо мыши)">−</button>
+          <span id="zoomLabel">100%</span>
+          <button id="zoomIn" title="Увеличить (колесо мыши)">+</button>
+          <button id="zoomFit" title="По размеру окна">⤢</button>
+        </div>
+
+        <!-- Floating SAM card (top-right, no screen dimming). Two phases:
+             a small loader while SAM runs, then the accept/cancel confirm. -->
+        <div id="pendingBar" class="pending-bar hidden">
+          <div id="pendingLoading" class="pending-loading hidden">
+            <div class="mini-spinner"></div>
+            <span id="pendingLoadMsg">Обработка…</span>
+            <div class="mini-progress"><div id="samProgressBar" class="mini-progress-bar"></div></div>
+            <button id="pendingCancel">Отменить</button>
+          </div>
+          <div id="pendingConfirm" class="hidden">
+            <span id="pendingMsg"></span>
+            <div class="pending-actions">
+              <button id="acceptPending" class="primary">Принять (Enter)</button>
+              <button id="cancelPending">Отмена (Esc)</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="busy" class="busy hidden">
+          <div class="busy-card">
+            <div class="spinner"></div>
+            <div id="busyMsg">Обработка…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Right: classes + annotations ──────────────────── -->
+    <aside id="sidePanel">
+      <div class="panel-head"><span>Классы</span></div>
+      <div class="panel-actions">
+        <input id="newClassName" type="text" placeholder="Имя класса" />
+        <button id="addClassBtn">+</button>
+      </div>
+      <ul id="classList"></ul>
+
+      <div class="panel-head">
+        <span>Аннотации</span><span id="annCount" class="muted"></span>
+        <button id="clearAnnsBtn" class="head-btn" title="Удалить все аннотации этого кадра">Очистить</button>
+      </div>
+      <ul id="annList"></ul>
+      <div id="suggestActions" class="panel-actions hidden">
+        <button id="confirmAllBtn" class="primary">Принять все предложения</button>
+        <button id="rejectAllBtn">Отклонить</button>
+      </div>
+
+      <div class="panel-head"><span>Авторазметка (SAM 3)</span></div>
+      <div class="propagate-box">
+        <p class="muted small">Разметьте объект (SAM 2 вручную или SAM 3) и выберите класс. SAM 3 найдёт такой же объект на других изображениях — по имени класса или своему запросу.</p>
+        <label class="small">Класс:
+          <select id="propClass"></select>
+        </label>
+        <label class="small">Запрос SAM 3:
+          <input id="propPrompt" type="text" placeholder="по умолчанию — имя класса" />
+        </label>
+        <label class="small">Область:
+          <select id="propScope">
+            <option value="all">Все изображения</option>
+            <option value="following">Следующие за текущим</option>
+          </select>
+        </label>
+        <button id="propagateBtn">Распространить на изображения →</button>
+        <div id="sam3Timer" class="sam3-timer muted small"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ── Export dialog ─────────────────────────────────────── -->
+  <div id="exportDialog" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="exportTitle">Экспорт</h3>
+      <label>Папка для экспорта
+        <input id="exportPath" type="text" placeholder="C:\путь\к\датасету" />
+      </label>
+      <label id="formatRow">Формат меток
+        <select id="exportFormat">
+          <option value="detect">Detection (рамки)</option>
+          <option value="segment">Segmentation (полигоны)</option>
+        </select>
+      </label>
+      <p id="cocoNote" class="muted small hidden">RF-DETR: COCO JSON с bbox + сегментацией (папки train/ и valid/).</p>
+      <label>Доля валидации
+        <input id="valSplit" type="number" min="0" max="0.5" step="0.05" value="0.1" />
+      </label>
+      <label class="checkbox"><input type="checkbox" id="augEnabled" /> Аугментация: повороты</label>
+      <div id="anglesRow" class="angles-row">
+        <label class="checkbox"><input type="checkbox" class="angle" value="90" checked /> 90°</label>
+        <label class="checkbox"><input type="checkbox" class="angle" value="180" checked /> 180°</label>
+        <label class="checkbox"><input type="checkbox" class="angle" value="270" checked /> 270°</label>
+      </div>
+      <label class="checkbox"><input type="checkbox" id="inclSuggested" /> Включить неподтверждённые предложения</label>
+      <div id="exportResult" class="export-result"></div>
+      <div class="modal-actions">
+        <button id="doExportBtn" class="primary">Экспортировать</button>
+        <button id="closeExportBtn">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

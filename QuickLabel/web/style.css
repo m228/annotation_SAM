@@ -1,0 +1,184 @@
+:root {
+  --bg: #1e1f26;
+  --panel: #262834;
+  --panel2: #2e303d;
+  --border: #3a3d4d;
+  --text: #e6e7ee;
+  --muted: #9aa0b5;
+  --accent: #4f8cff;
+  --accent2: #3cb44b;
+  --danger: #e6194b;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+button {
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; cursor: pointer; font-size: 13px;
+}
+button:hover:not(:disabled) { background: #3a3d4d; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: #3f7be6; }
+input, select {
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px;
+}
+input:focus, select:focus { outline: 1px solid var(--accent); }
+
+/* ── Top bar ── */
+#topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 700; font-size: 18px; color: var(--accent); }
+.proj-controls { display: flex; gap: 6px; }
+.spacer { flex: 1; }
+.sam-status { font-size: 12px; color: var(--muted); padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.sam-status.ok { color: var(--accent2); border-color: var(--accent2); }
+.sam-status.err { color: var(--danger); border-color: var(--danger); }
+
+/* ── Layout ── */
+#workspace { flex: 1; display: grid; grid-template-columns: 240px 1fr 280px; overflow: hidden; }
+aside, #canvasPanel { display: flex; flex-direction: column; overflow: hidden; }
+#imagesPanel, #sidePanel { background: var(--panel); border-right: 1px solid var(--border); }
+#sidePanel { border-right: none; border-left: 1px solid var(--border); }
+.panel-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; font-weight: 600; font-size: 13px;
+  border-bottom: 1px solid var(--border); background: var(--panel2);
+}
+#annCount { margin-left: 6px; }
+/* Small action button living in a panel header, pushed to the right edge */
+.head-btn { margin-left: auto; padding: 3px 9px; font-size: 11px; font-weight: 500;
+  background: var(--panel); border: 1px solid var(--border); }
+.head-btn:hover { color: var(--danger); border-color: var(--danger); }
+.panel-actions { display: flex; gap: 6px; padding: 8px 12px; }
+.panel-actions input { flex: 1; min-width: 0; }
+ul { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+
+/* ── Image list ── */
+#imageList { flex: 1; }
+#imageList li {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px;
+}
+#imageList li:hover { background: var(--panel2); }
+#imageList li.active { background: #34384a; border-left: 3px solid var(--accent); }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 10px; margin-left: auto; }
+.badge.done { background: var(--accent2); color: #fff; }
+.badge.suggest { background: #c08a00; color: #fff; }
+.img-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#imageList .row-del { opacity: 0; }
+#imageList li:hover .row-del { opacity: 1; }
+.sam3-timer { margin-top: 8px; min-height: 16px; }
+.sam3-timer:not(:empty) { color: var(--accent2); }
+
+/* ── Canvas ── */
+#canvasPanel { background: #16171c; }
+#toolbar {
+  display: flex; align-items: center; gap: 6px; padding: 8px;
+  background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tool-sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+.sam3-inline { display: flex; gap: 4px; }
+.sam3-inline input { width: 200px; }
+#canvasWrap { flex: 1; position: relative; overflow: hidden; }
+#canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.canvas-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
+
+/* Floating zoom control */
+.zoom-ctl { position: absolute; left: 12px; bottom: 12px; z-index: 15;
+  display: flex; align-items: center; gap: 4px; padding: 4px 6px;
+  background: rgba(30,32,40,.92); border: 1px solid var(--border); border-radius: 8px; }
+.zoom-ctl button { width: 28px; height: 26px; padding: 0; font-size: 15px; line-height: 1; }
+.zoom-ctl #zoomLabel { min-width: 46px; text-align: center; font-size: 12px; color: var(--muted); }
+
+.tool-cursor { font-size: 16px; line-height: 1; padding: 5px 9px; }
+
+/* Export split-button dropdown */
+.export-menu { position: relative; }
+.export-menu .dropdown {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  display: flex; flex-direction: column; min-width: 260px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.45); overflow: hidden;
+}
+.export-menu .dropdown button {
+  text-align: left; border: none; border-radius: 0; background: transparent;
+  padding: 10px 14px; font-size: 13px; white-space: nowrap;
+}
+.export-menu .dropdown button:hover { background: var(--accent); color: #fff; }
+.exc-chk { flex-shrink: 0; cursor: pointer; margin: 0; }
+#annList li.hidden-here { opacity: .55; }
+#annList li.hidden-here .class-name small::after { content: " (скрыта)"; color: var(--danger); }
+.busy { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.busy-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px 26px; display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 260px; }
+.spinner { width: 36px; height: 36px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#busyMsg { font-size: 13px; text-align: center; }
+.progress { width: 100%; height: 8px; background: var(--panel2); border-radius: 5px; overflow: hidden; }
+.progress-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 5px; transition: width .25s ease; }
+.propagate-box label { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+.propagate-box select, .propagate-box input { width: 100%; }
+/* Floating confirm card — overlay in the top-right corner so it never
+   reflows or shrinks the canvas while annotating quickly. */
+.pending-bar { position: absolute; top: 12px; right: 12px; z-index: 16;
+  display: flex; flex-direction: column; gap: 8px; width: 188px; padding: 12px;
+  background: rgba(30,32,40,.96); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+.pending-bar span { text-align: center; font-size: 12.5px; }
+.pending-actions { display: flex; flex-direction: column; gap: 6px; }
+.pending-actions button { width: 100%; }
+/* Loader phase of the SAM card (small spinner, no screen dimming) */
+.pending-loading { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pending-loading button { width: 100%; }
+.mini-spinner { width: 26px; height: 26px; border: 3px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+.mini-progress { width: 100%; height: 5px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+.mini-progress-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; transition: width .2s ease; }
+
+/* ── Classes & annotations ── */
+#classList li, #annList li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 13px; cursor: pointer;
+}
+#classList li.active { background: #34384a; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+/* class colour picker styled to look like the swatch */
+input[type="color"].class-color {
+  width: 16px; height: 16px; padding: 0; border: 1px solid var(--border);
+  border-radius: 3px; background: none; cursor: pointer; flex-shrink: 0;
+}
+input[type="color"].class-color::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"].class-color::-webkit-color-swatch { border: none; border-radius: 2px; }
+.class-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-del { color: var(--muted); padding: 2px 6px; font-size: 12px; border: none; background: transparent; }
+.row-del:hover { color: var(--danger); background: transparent; }
+#annList li.suggested { opacity: .85; font-style: italic; }
+#annList li.selected { background: #34384a; box-shadow: inset 3px 0 0 var(--accent); }
+#annList li.static { background: #2a2f25; }
+#annList li.static .class-name small { color: var(--accent2); }
+.static-chk { flex-shrink: 0; cursor: pointer; margin: 0; }
+.ann-conf { font-size: 11px; color: var(--muted); }
+.propagate-box { padding: 10px 12px; }
+.propagate-box button { width: 100%; }
+
+/* ── Modal ── */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.modal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; width: 420px; display: flex; flex-direction: column; gap: 12px; }
+.modal-card h3 { margin: 0 0 4px; }
+.modal-card label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.modal-card label.checkbox { flex-direction: row; align-items: center; gap: 8px; }
+.angles-row { display: flex; gap: 14px; padding-left: 20px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.export-result { font-size: 13px; color: var(--accent2); white-space: pre-wrap; }

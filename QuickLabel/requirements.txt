@@ -1,0 +1,40 @@
+# QuickLabel dependencies (Python 3.13, Windows, NVIDIA GPU).
+#
+# IMPORTANT: torch / torchvision must come from the CUDA index, installed first:
+#   pip install --index-url https://download.pytorch.org/whl/cu124 torch==2.6.0 torchvision==0.21.0
+# Then install the rest from PyPI:
+#   pip install -r requirements.txt
+#
+# sam2 / sam3 are pure-Python wheels. sam3 is installed --no-deps because its
+# declared numpy<2 pin has no wheel for Python 3.13 (numpy 2.x works fine at
+# runtime). triton is NOT required: ml_backend/sam3_compat.py provides an
+# OpenCV EDT fallback.
+
+# Web server
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Imaging / numerics
+numpy
+pillow
+opencv-python
+scipy
+
+# SAM dependencies
+timm>=1.0.17
+huggingface_hub
+einops
+hydra-core
+iopath>=0.1.10
+ftfy==6.1.1
+regex
+tqdm
+typing_extensions
+pycocotools
+psutil
+
+# Install these separately (special handling, see header):
+#   torch==2.6.0+cu124  torchvision==0.21.0+cu124   (from cu124 index)
+#   sam2                                            (pip install sam2)
+#   sam3                                            (pip install --no-deps <sam3 wheel or github zip>)
