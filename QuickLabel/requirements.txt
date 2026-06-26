@@ -38,3 +38,10 @@ psutil
 #   torch==2.6.0+cu124  torchvision==0.21.0+cu124   (from cu124 index)
 #   sam2                                            (pip install sam2)
 #   sam3                                            (pip install --no-deps <sam3 wheel or github zip>)
+#
+# Local model training (optional — only needed for the "Обучить модель" page).
+# Installed by `setup.ps1 -WithTraining`, NOT by `pip install -r requirements.txt`.
+# Both need INTERNET (full offline install fails on Python 3.13 — VisoLabel's
+# wheelhouse is cp312, so matplotlib & other compiled deps have no 3.13 wheel):
+#   rfdetr==1.5.2  (PIN: 1.7+/1.8 changed the train API the trainer relies on)
+#   ultralytics    (YOLO11 / YOLO26)

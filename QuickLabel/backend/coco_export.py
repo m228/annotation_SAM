@@ -51,9 +51,17 @@ def _bbox_and_area(pts: np.ndarray, w: int, h: int):
     return [round(x0, 2), round(y0, 2), round(bw, 2), round(bh, 2)], round(area, 2), (x1, y1)
 
 
+# Sample.split ("train"|"val"|"test") → COCO split-folder name.
+_SPLIT_DIR = {"train": "train", "val": "valid", "test": "test"}
+
+
 def export_project(data: dict, out_dir: Path, *,
-                   val_split: float = 0.1, augment: bool = False,
-                   angles: Optional[list[float]] = None,
+                   val_split: float = 0.1, test_split: float = 0.0,
+                   augment: bool = False, angles: Optional[list[float]] = None,
+                   flip_h: bool = False, brightness: bool = False, grayscale: bool = False,
+                   tile: bool = False, tile_size: int = 640, tile_overlap: float = 0.2,
+                   tile_max_images: int = 0, tile_empty_ratio: float = 0.15,
+                   tile_min_visibility: float = 0.3,
                    include_suggested: bool = False, seed: int = 42,
                    project_name: str = "dataset", **_ignored) -> dict:
     out_dir = Path(out_dir)
@@ -67,18 +75,26 @@ def export_project(data: dict, out_dir: Path, *,
     for i, c in enumerate(classes):
         categories.append({"id": i + 1, "name": c["name"], "supercategory": super_name})
 
+    wanted_splits = ["train", "valid"]
+    if test_split and test_split > 0:
+        wanted_splits.append("test")
     splits = {
-        s: {"dir": out_dir / s, "images": [], "annotations": [],
-            "img_id": 0, "ann_id": 0}
-        for s in ("train", "valid")
+        name: {"dir": out_dir / name, "images": [], "annotations": [],
+               "img_id": 0, "ann_id": 0}
+        for name in wanted_splits
     }
     for st in splits.values():
         st["dir"].mkdir(parents=True, exist_ok=True)
 
-    counts = {"train": 0, "val": 0, "instances": 0, "augmented": 0}
-    for s in ec.iter_samples(data, val_split=val_split, augment=augment, angles=angles,
+    counts = {"train": 0, "val": 0, "test": 0, "instances": 0, "augmented": 0, "tiles": 0}
+    for s in ec.iter_samples(data, val_split=val_split, test_split=test_split,
+                             augment=augment, angles=angles, flip_h=flip_h,
+                             brightness=brightness, grayscale=grayscale,
+                             tile=tile, tile_size=tile_size, tile_overlap=tile_overlap,
+                             tile_max_images=tile_max_images, tile_empty_ratio=tile_empty_ratio,
+                             tile_min_visibility=tile_min_visibility,
                              include_suggested=include_suggested, seed=seed):
-        st = splits["valid" if s.split == "val" else "train"]
+        st = splits[_SPLIT_DIR[s.split]]
         file_name = f"{s.stem}{'.jpg' if s.is_aug else s.ext}"
         if not s.write_image(st["dir"] / file_name):
             continue
@@ -105,10 +121,12 @@ def export_project(data: dict, out_dir: Path, *,
             })
             st["ann_id"] += 1
             n_inst += 1
-        counts["train" if s.split == "train" else "val"] += 1
+        counts["val" if s.split == "val" else s.split] += 1
         counts["instances"] += n_inst
         if s.is_aug:
             counts["augmented"] += 1
+        if s.is_tile:
+            counts["tiles"] += 1
 
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     for name, st in splits.items():

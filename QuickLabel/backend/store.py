@@ -68,6 +68,7 @@ class ProjectStore:
             "classes": [],
             "images": [],
             "propagation_rules": [],
+            "trained_models": [],   # records of local training runs (see add_trained_model)
             "static_rois": [],   # ROIs reused on every frame (see set_static_rois)
             "settings": {
                 "export_format": "detect",   # "detect" (bbox) | "segment" (polygon)
@@ -108,7 +109,8 @@ class ProjectStore:
     # ── raw read/write ───────────────────────────────────────────
     def load(self) -> dict:
         data = json.loads(self.json_path.read_text(encoding="utf-8"))
-        data.setdefault("static_rois", [])  # migrate older projects
+        data.setdefault("static_rois", [])      # migrate older projects
+        data.setdefault("trained_models", [])
         return data
 
     def _write(self, data: dict) -> None:
@@ -234,6 +236,68 @@ class ProjectStore:
         self._write(data)
         return rec
 
+    def import_samples(self, samples: list[dict], copy: bool = True) -> dict:
+        """Bulk-add images + annotations from an imported dataset.
+
+        Each sample = ``{"path": <src image>, "annotations": [{"class_name",
+        "bbox", "polygon", "confidence"?}, …]}``. Classes are created on demand,
+        matched by name (case-insensitive). Images are copied into the project by
+        default. Written to disk once at the end (not per-image)."""
+        data = self.load()
+        name_to_id = {c["name"].strip().lower(): c["id"] for c in data["classes"]}
+        classes_added = 0
+
+        def _ensure_class(name: str) -> int:
+            nonlocal classes_added
+            key = (name or "object").strip().lower()
+            if key in name_to_id:
+                return name_to_id[key]
+            cid = max((c["id"] for c in data["classes"]), default=-1) + 1
+            data["classes"].append(
+                {"id": cid, "name": name, "color": DEFAULT_COLORS[cid % len(DEFAULT_COLORS)]})
+            name_to_id[key] = cid
+            classes_added += 1
+            return cid
+
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        images_added = anns_added = 0
+        for s in samples:
+            src = Path(s.get("path", ""))
+            if not src.is_file():
+                continue
+            if copy:
+                dest = self.images_dir / src.name
+                stem, suffix, i = dest.stem, dest.suffix, 2
+                while dest.exists():
+                    dest = self.images_dir / f"{stem}-{i}{suffix}"
+                    i += 1
+                try:
+                    dest.write_bytes(src.read_bytes())
+                except Exception:
+                    continue
+                rec = self._image_record(dest, copied=True)
+            else:
+                rec = self._image_record(src, copied=False)
+            if not rec:
+                continue
+            anns = []
+            for a in s.get("annotations", []):
+                anns.append({
+                    "id": new_id(),
+                    "class_id": _ensure_class(a.get("class_name", "object")),
+                    "bbox": a.get("bbox"),
+                    "polygon": a.get("polygon"),
+                    "confidence": a.get("confidence", 1.0),
+                    "source": "imported",
+                    "status": "confirmed",
+                })
+            rec["annotations"] = anns
+            data["images"].append(rec)
+            images_added += 1
+            anns_added += len(anns)
+        self._write(data)
+        return {"images": images_added, "annotations": anns_added, "classes": classes_added}
+
     def get_image(self, image_id: str) -> Optional[dict]:
         for img in self.load()["images"]:
             if img["id"] == image_id:
@@ -307,3 +371,41 @@ class ProjectStore:
         data["settings"].update(patch)
         self._write(data)
         return data["settings"]
+
+    # ── training runs (local model training) ─────────────────────
+    @property
+    def train_dir(self) -> Path:
+        """Working directory for training runs (datasets + checkpoints)."""
+        return self.dir / "_train"
+
+    def run_dir(self, run_id: str) -> Path:
+        return self.train_dir / run_id
+
+    def add_trained_model(self, record: dict) -> dict:
+        """Insert or update a trained-model record (keyed by run_id)."""
+        data = self.load()
+        models = data.setdefault("trained_models", [])
+        rid = record.get("run_id")
+        for i, m in enumerate(models):
+            if m.get("run_id") == rid:
+                models[i] = {**m, **record}
+                self._write(data)
+                return models[i]
+        record.setdefault("created_at", _now())
+        models.insert(0, record)        # newest first
+        self._write(data)
+        return record
+
+    def list_trained_models(self) -> list[dict]:
+        return self.load().get("trained_models", [])
+
+    def delete_trained_model(self, run_id: str) -> None:
+        data = self.load()
+        data["trained_models"] = [
+            m for m in data.get("trained_models", []) if m.get("run_id") != run_id
+        ]
+        self._write(data)
+        # Remove the run's dataset + checkpoints from disk.
+        run = self.run_dir(run_id)
+        if run.is_dir():
+            shutil.rmtree(run, ignore_errors=True)
