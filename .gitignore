@@ -72,3 +72,4 @@ __pycache__/
 # Local annotation projects, uploaded images and training runs (user data,
 # machine-specific paths). Already-tracked project.json files stay tracked.
 /QuickLabel/projects
+

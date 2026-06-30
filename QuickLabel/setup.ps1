@@ -6,7 +6,7 @@
 #   .\setup.ps1            # GPU build (CUDA 12.4)
 #   .\setup.ps1 -CpuOnly   # CPU-only torch (no GPU; SAM 3 will be slow)
 
-param([switch]$CpuOnly)
+param([switch]$CpuOnly, [switch]$WithTraining)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -45,4 +45,24 @@ if ($CpuOnly) {
 & $VenvPy -m pip install (Join-Path $Root "wheels\sam2-1.1.0-py3-none-any.whl")
 & $VenvPy -m pip install --no-deps (Join-Path $Root "wheels\sam3-0.1.0-py3-none-any.whl")
 
+# 6) Optional: local-training frameworks (RF-DETR + Ultralytics YOLO).
+#    NOTE: needs internet. Full offline install does NOT work on Python 3.13:
+#    VisoLabel's wheelhouse is built for cp312, so compiled deps (matplotlib etc.)
+#    have no 3.13 wheel there. We install from PyPI and pass the wheelhouse as an
+#    extra --find-links cache (reuses its pure-python wheels, downloads the rest).
+#    rfdetr is PINNED to 1.5.2 - newer (1.7+/1.8) changed the train API this
+#    trainer relies on (e.g. removed rfdetr.main).
+if ($WithTraining) {
+    $Wheelhouse = Join-Path (Split-Path -Parent $Root) "VisoLabel\ml_backend\.wheelhouse\wheelhouse_cu124_amd64"
+    $FindLinks = @()
+    if (Test-Path $Wheelhouse) { $FindLinks = @("--find-links", $Wheelhouse) }
+    Write-Host "`nInstalling rfdetr==1.5.2 from PyPI (needs internet)..." -ForegroundColor Cyan
+    & $VenvPy -m pip install @FindLinks "rfdetr==1.5.2"
+    Write-Host "Installing ultralytics from PyPI (needs internet)..." -ForegroundColor Cyan
+    & $VenvPy -m pip install ultralytics
+}
+
 Write-Host "`nDone. Make sure models\sam2.1_hiera_large.pt and models\sam3.pt are present, then run .\run.ps1" -ForegroundColor Green
+if (-not $WithTraining) {
+    Write-Host "Tip: re-run with -WithTraining to enable the in-app model training (RF-DETR / YOLO)." -ForegroundColor DarkGray
+}

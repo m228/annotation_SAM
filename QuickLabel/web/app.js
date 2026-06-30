@@ -113,11 +113,15 @@ async function loadProjects(selectSlug) {
 
 async function openProject(slug) {
   $("delProjectBtn").disabled = !slug;
-  if (!slug) { $("workspace").classList.add("hidden"); state.slug = null; return; }
+  if (!slug) {
+    $("workspace").classList.add("hidden"); state.slug = null;
+    $("trainBtn").disabled = true; return;
+  }
   state.slug = slug;
   await refreshProject();
   $("workspace").classList.remove("hidden");
   $("exportBtn").disabled = false;
+  $("trainBtn").disabled = false;
   if (state.project.classes.length) selectClass(state.project.classes[0].id);
   else state.currentClassId = null;
   if (state.project.images.length) selectImage(state.project.images[0]);
@@ -132,6 +136,7 @@ async function deleteProject() {
   state.slug = null; state.project = null; state.currentImage = null; state.imgEl = null;
   $("workspace").classList.add("hidden");
   $("exportBtn").disabled = true;
+  $("trainBtn").disabled = true;
   $("delProjectBtn").disabled = true;
   await loadProjects();
 }
@@ -212,6 +217,7 @@ function selectImage(img) {
   draw();                       // reflect the cleared/!current state immediately
   renderImageList();
   renderAnnList();
+  updateSahiForecast();
 }
 
 // ── Classes ───────────────────────────────────────────────────────
@@ -855,16 +861,55 @@ async function runSam3Auto() {
   const prompt = ($("sam3Prompt").value.trim() || (cls && cls.name) || "").trim();
   if (!prompt) { alert("Введите запрос для SAM 3 или выберите класс."); return; }
   state.lastPrompt = prompt;
+  const sahi = $("samSahi").checked;
+  const body = {
+    image_id: state.currentImage.id, class_id: state.currentClassId,
+    text_prompt: prompt, confidence: state.project.settings.sam3_confidence ?? 0.5,
+    sahi,
+    slice_size: Number($("samSlice").value) || 512,
+    overlap: Number($("samOverlap").value) || 0.2,
+    iou: Number($("samIou").value) || 0.45,
+    drop_edge: $("samDropEdge") ? $("samDropEdge").checked : true,
+  };
+  const label = sahi
+    ? `SAM 3 (SAHI): прогон фото и тайлов…`
+    : `SAM 3: поиск «${prompt}»…`;
   try {
-    const res = await runJob(`/api/projects/${state.slug}/sam3/auto`, {
-      image_id: state.currentImage.id, class_id: state.currentClassId,
-      text_prompt: prompt, confidence: state.project.settings.sam3_confidence ?? 0.5,
-    }, `SAM 3: поиск «${prompt}»…`);
-    showSam3Time(`Фото размечено за ${res.elapsed} с — найдено: ${res.predictions.length}`);
+    const res = await runJob(`/api/projects/${state.slug}/sam3/auto`, body, label);
+    const note = res.passes > 1
+      ? `${res.passes} проходов (1 основной + ${res.passes - 1} тайлов), сырых ${res.raw}` +
+        `${res.edge_dropped ? `, откинуто на швах ${res.edge_dropped}` : ""}` +
+        ` → после дедупликации ${res.predictions.length}, за ${res.elapsed} с`
+      : `Фото размечено за ${res.elapsed} с — найдено: ${res.predictions.length}`;
+    showSam3Time(note);
     if (!res.predictions.length) { alert("SAM 3 ничего не нашёл."); return; }
     for (const p of res.predictions) state.currentImage.annotations.push(p);
     await saveAnns();
   } catch (err) { if (!(err instanceof JobCancelled)) alert("SAM 3: " + err.message); }
+}
+
+// Forecast of SAHI passes for the current image (matches the backend tiling).
+function sahiTileCount(w, h, slice, overlap) {
+  slice = Math.max(64, slice || 512);
+  const step = Math.max(1, Math.floor(slice * (1 - Math.min(0.9, Math.max(0, overlap)))));
+  const nx = Math.ceil(Math.max(1, w - 1) / step);
+  const ny = Math.ceil(Math.max(1, h - 1) / step);
+  return nx * ny;
+}
+// Highlight the toolbar SAHI button when slicing is active.
+function syncSahiToggle() {
+  const btn = $("sahiToggleBtn");
+  if (btn) btn.classList.toggle("active", $("samSahi").checked);
+}
+
+function updateSahiForecast() {
+  const el = $("samSahiForecast");
+  if (!el) return;
+  const img = state.currentImage;
+  if (!img) { el.textContent = "Откройте изображение для расчёта проходов."; return; }
+  const tiles = sahiTileCount(img.width, img.height,
+    Number($("samSlice").value) || 512, Number($("samOverlap").value) || 0.2);
+  el.textContent = `Изображение ${img.width}×${img.height}. Проходов: 1 основной + ${tiles} тайлов = ${tiles + 1}.`;
 }
 
 // SAM 3 stopwatch readout (shown in the SAM 3 panel + console).
@@ -941,6 +986,24 @@ async function importFolder() {
     if (!state.currentImage && state.project.images.length) selectImage(state.project.images[0]);
     alert(`Добавлено изображений: ${res.added}`);
   } catch (err) { alert("Импорт: " + err.message); }
+  finally { busy(false); }
+}
+
+async function importDataset() {
+  const folder = prompt(
+    "Путь к папке экспортированного датасета (YOLO или RF-DETR/COCO).\n" +
+    "Формат определяется автоматически (data.yaml → YOLO, _annotations.coco.json → COCO).\n" +
+    "Импортируются все части (train/val/test) как подтверждённая разметка:");
+  if (!folder) return;
+  try {
+    busy(true, "Импорт разметки…");
+    const res = await api("POST", `/api/projects/${state.slug}/import_dataset`,
+      { folder, format: "auto", copy: true });
+    await refreshProject();
+    if (!state.currentImage && state.project.images.length) selectImage(state.project.images[0]);
+    alert(`Импортировано (${(res.format || "").toUpperCase()}): изображений ${res.images}, ` +
+      `аннотаций ${res.annotations}, новых классов ${res.classes}.`);
+  } catch (err) { alert("Импорт разметки: " + err.message); }
   finally { busy(false); }
 }
 
@@ -1048,6 +1111,7 @@ function init() {
   };
   $("delProjectBtn").onclick = deleteProject;
   $("importFolderBtn").onclick = importFolder;
+  $("importDatasetBtn").onclick = importDataset;
   $("uploadBtn").onclick = () => $("uploadInput").click();
   $("uploadInput").onchange = (e) => uploadFiles([...e.target.files]);
   $("addClassBtn").onclick = addClass;
@@ -1056,6 +1120,23 @@ function init() {
   document.querySelectorAll(".tool").forEach((b) => b.onclick = () => setTool(b.dataset.tool));
   $("sam3AutoBtn").onclick = runSam3Auto;
   $("sam3Prompt").onkeydown = (e) => { if (e.key === "Enter") runSam3Auto(); };
+  $("samSahi").onchange = () => { syncSahiToggle(); updateSahiForecast(); };
+  $("samSlice").oninput = updateSahiForecast;
+  $("samOverlap").oninput = updateSahiForecast;
+  $("sahiToggleBtn").onclick = (e) => {
+    e.stopPropagation();
+    const pop = $("sahiPopover");
+    const willOpen = pop.classList.contains("hidden");
+    pop.classList.toggle("hidden");
+    if (willOpen) {
+      // Fixed-position below the button (a clipping ancestor uses overflow:hidden).
+      const r = $("sahiToggleBtn").getBoundingClientRect();
+      pop.style.top = (r.bottom + 6) + "px";
+      pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 266)) + "px";
+      updateSahiForecast();
+    }
+  };
+  $("sahiPopover").onclick = (e) => e.stopPropagation();
   $("propagateBtn").onclick = propagate;
   $("propClass").onchange = (e) => {
     const cls = classById(Number(e.target.value));
@@ -1082,9 +1163,34 @@ function init() {
       openExport(b.dataset.target);
     };
   });
-  document.addEventListener("click", () => $("exportDropdown").classList.add("hidden"));
+  document.addEventListener("click", () => {
+    $("exportDropdown").classList.add("hidden");
+    $("sahiPopover").classList.add("hidden");
+  });
   $("doExportBtn").onclick = doExport;
   $("closeExportBtn").onclick = () => $("exportDialog").classList.add("hidden");
+
+  // Training page
+  $("trainBtn").onclick = openTrainView;
+  $("trainBack").onclick = closeTrainView;
+  $("backFromProgress").onclick = closeTrainView;
+  $("newTrainBtn").onclick = showTrainSetup;
+  $("startTrainBtn").onclick = startTraining;
+  $("stopTrainBtn").onclick = stopTraining;
+  document.querySelectorAll('input[name="framework"]').forEach((r) => { r.onchange = onFrameworkChange; });
+  document.querySelectorAll('input[name="taskType"]').forEach((r) => {
+    r.onchange = () => { renderModelCards(); };
+  });
+  $("valPct").oninput = updateSplitBar;
+  $("testPct").oninput = updateSplitBar;
+  $("tileEnabled").onchange = (e) => $("tileOpts").classList.toggle("hidden", !e.target.checked);
+
+  // Test / inference dialog
+  $("runTestBtn").onclick = runTest;
+  $("closeTestBtn").onclick = () => $("testDialog").classList.add("hidden");
+  $("runValBtn").onclick = runValidation;
+  $("closeValBtn").onclick = () => $("valDialog").classList.add("hidden");
+  $("testSahi").onchange = (e) => $("sahiRow").classList.toggle("hidden", !e.target.checked);
 
   const c = $("canvas");
   c.addEventListener("mousedown", onMouseDown);
@@ -1116,10 +1222,11 @@ function init() {
       removeAnn(state.selectedAnnId);
     } else if (e.key === "ArrowRight") navigate(1);
     else if (e.key === "ArrowLeft") navigate(-1);
-    else if (e.key === "1") setTool("box");
-    else if (e.key === "2") setTool("poly");
-    else if (e.key === "3") setTool("sam-point");
-    else if (e.key === "4") setTool("sam-box");
+    else if (e.key === "1") setTool("select");
+    else if (e.key === "2") setTool("box");
+    else if (e.key === "3") setTool("poly");
+    else if (e.key === "4") setTool("sam-point");
+    else if (e.key === "5") setTool("sam-box");
     else if (state.currentImage && (e.key === "+" || e.key === "="))
       zoomAt($("canvas").width / 2, $("canvas").height / 2, 1.25);
     else if (state.currentImage && (e.key === "-" || e.key === "_"))
@@ -1131,6 +1238,598 @@ function init() {
   setTool("select");
   loadProjects();
   checkHealth();
+}
+
+// ══════════════ Training page ══════════════
+// Model line-up per framework. RF-DETR sizes share a backbone (see
+// training_service); YOLO sizes differ. `imgsz` holds the default resolution
+// per task so the form pre-fills a sensible value.
+const MODEL_SPECS = {
+  rfdetr: [
+    { id: "RF-DETR-N", name: "RF-DETR-N", tags: ["Быстрая", "30M"], imgsz: { object_detection: 560, instance_segmentation: 312 } },
+    { id: "RF-DETR-S", name: "RF-DETR-S", tags: ["Средняя", "32M"], imgsz: { object_detection: 560, instance_segmentation: 384 } },
+    { id: "RF-DETR-M", name: "RF-DETR-M", tags: ["Медленнее", "34M"], imgsz: { object_detection: 560, instance_segmentation: 432 } },
+    { id: "RF-DETR-L", name: "RF-DETR-L", tags: ["Большая", "34M"], imgsz: { object_detection: 704, instance_segmentation: 504 } },
+    { id: "RF-DETR-XL", name: "RF-DETR-XL", tags: ["Очень большая", "126M", "rfdetr[plus]"], imgsz: { object_detection: 700, instance_segmentation: 700 } },
+    { id: "RF-DETR-2XL", name: "RF-DETR-2XL", tags: ["Максимум", "127M", "rfdetr[plus]"], imgsz: { object_detection: 880, instance_segmentation: 880 } },
+  ],
+  yolo: [
+    { id: "YOLO11n", name: "YOLO11n", tags: ["v11", "Быстрая"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO11s", name: "YOLO11s", tags: ["v11", "Средняя"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO11m", name: "YOLO11m", tags: ["v11", "Лучше"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO11l", name: "YOLO11l", tags: ["v11", "Большая"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO11x", name: "YOLO11x", tags: ["v11", "Максимум"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO26n", name: "YOLO26n", tags: ["v26", "Быстрая"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO26s", name: "YOLO26s", tags: ["v26", "Средняя"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO26m", name: "YOLO26m", tags: ["v26", "Лучше"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO26l", name: "YOLO26l", tags: ["v26", "Большая"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+    { id: "YOLO26x", name: "YOLO26x", tags: ["v26", "Максимум"], imgsz: { object_detection: 640, instance_segmentation: 640 } },
+  ],
+};
+const FW_DEFAULTS = {
+  rfdetr: { lr: 0.0001, batch: 4, epochs: 50 },
+  yolo: { lr: 0.01, batch: 16, epochs: 100 },
+};
+const TRAIN_DONE = ["completed", "stopped", "error"];
+
+function curFramework() { return document.querySelector('input[name="framework"]:checked').value; }
+function curTask() { return document.querySelector('input[name="taskType"]:checked').value; }
+
+async function openTrainView() {
+  if (!state.slug) return;
+  $("trainView").classList.remove("hidden");
+  $("trainSubtitle").textContent =
+    `Проект: ${state.project.name} · изображений: ${state.project.images.length} · классов: ${state.project.classes.length}`;
+  await checkTrainDeps();
+  renderModelCards();
+  updateSplitBar();
+  await loadTrainedModels();
+  // Reopened while a run is live → jump straight to the dashboard.
+  let st = null;
+  try { st = await api("GET", "/api/train/status"); } catch {}
+  if (st && st.running) { showTrainProgress(); startTrainPolling(); }
+  else showTrainSetup();
+}
+
+function closeTrainView() { stopTrainPolling(); $("trainView").classList.add("hidden"); }
+function showTrainSetup() {
+  stopTrainPolling();
+  $("startTrainBtn").disabled = !fwInstalled(curFramework());
+  $("trainProgress").classList.add("hidden");
+  $("trainSetup").classList.remove("hidden");
+}
+function showTrainProgress() {
+  $("trainSetup").classList.add("hidden");
+  $("trainProgress").classList.remove("hidden");
+}
+
+async function checkTrainDeps() {
+  try {
+    const d = await api("GET", "/api/train/check");
+    state.depInfo = d;
+    $("trainDevice").textContent = "устройство: " +
+      (d.device === "cuda" ? (d.device_name || "GPU") : d.device);
+    $("trainDevice").className = "sam-status " + (d.cuda ? "ok" : "");
+    $("fwRfdetr").textContent = d.rfdetr ? "установлен" : "не установлен";
+    $("fwRfdetr").className = d.rfdetr ? "ok-text" : "muted";
+    $("fwYolo").textContent = d.ultralytics ? "установлен" : "не установлен";
+    $("fwYolo").className = d.ultralytics ? "ok-text" : "muted";
+    updateDepWarn();
+  } catch (e) { console.error("train check", e); }
+}
+
+function fwInstalled(fw) {
+  const d = state.depInfo || {};
+  return fw === "yolo" ? !!d.ultralytics : !!d.rfdetr;
+}
+
+function updateDepWarn() {
+  const fw = curFramework();
+  const warn = $("depWarn");
+  if (!state.depInfo || fwInstalled(fw)) {
+    warn.classList.add("hidden"); $("startTrainBtn").disabled = false; return;
+  }
+  const pkg = fw === "yolo" ? "ultralytics" : "rfdetr==1.5.2";
+  warn.textContent = `Пакет «${pkg}» не установлен — обучение для этого фреймворка недоступно.\n` +
+    `Выполните в папке QuickLabel:  .\\setup.ps1 -WithTraining  (нужен интернет)\n` +
+    `или вручную:  .\\.venv\\Scripts\\python.exe -m pip install ${pkg}`;
+  warn.classList.remove("hidden");
+  $("startTrainBtn").disabled = true;
+}
+
+function onFrameworkChange() {
+  const def = FW_DEFAULTS[curFramework()];
+  $("hpLr").value = def.lr;
+  $("hpBatch").value = def.batch;
+  $("hpEpochs").value = def.epochs;
+  renderModelCards();
+  updateDepWarn();
+}
+
+function renderModelCards() {
+  const fw = curFramework(), task = curTask();
+  const specs = MODEL_SPECS[fw];
+  if (!specs.some((s) => s.id === state.trainModelId)) {
+    state.trainModelId = specs[Math.min(1, specs.length - 1)].id;   // default S/s
+  }
+  const wrap = $("modelCards");
+  wrap.innerHTML = "";
+  specs.forEach((s) => {
+    const div = document.createElement("div");
+    div.className = "model-card" + (s.id === state.trainModelId ? " active" : "");
+    let label = s.name;
+    if (task === "instance_segmentation") {
+      label = fw === "rfdetr" ? s.name.replace("RF-DETR", "RF-DETR-Seg") : s.name + "-seg";
+    }
+    div.innerHTML = `<div class="mc-name">${label}</div><div class="mc-tags">` +
+      s.tags.map((t) => `<span class="mc-tag">${t}</span>`).join("") + "</div>";
+    div.onclick = () => { state.trainModelId = s.id; renderModelCards(); };
+    wrap.appendChild(div);
+  });
+  updateImgszDefault();
+}
+
+// Suggested batch size that fits an ~8 GB GPU, by model size (bigger → smaller batch).
+function suggestedBatch(fw, id) {
+  if (fw === "yolo") {
+    if (/x$/i.test(id)) return 2;
+    if (/l$/i.test(id)) return 4;
+    if (/m$/i.test(id)) return 8;
+    return 16;                       // n, s
+  }
+  const size = String(id).split("-").pop().toUpperCase();   // RF-DETR
+  return { N: 4, S: 4, M: 4, L: 2, XL: 1, "2XL": 1 }[size] || 4;
+}
+
+function updateImgszDefault() {
+  const fw = curFramework();
+  const spec = MODEL_SPECS[fw].find((s) => s.id === state.trainModelId);
+  if (spec) $("hpImgsz").value = spec.imgsz[curTask()] || spec.imgsz.object_detection;
+  // Pre-fill a VRAM-safe batch for the chosen model size (user can still edit).
+  $("hpBatch").value = suggestedBatch(fw, state.trainModelId);
+}
+
+function clampNum(v, lo, hi, dflt) {
+  let n = Number(v); if (Number.isNaN(n)) n = dflt;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+function updateSplitBar() {
+  let val = clampNum($("valPct").value, 0, 60, 10);
+  let test = clampNum($("testPct").value, 0, 40, 0);
+  if (val + test > 90) { test = Math.max(0, 90 - val); $("testPct").value = test; }
+  const train = Math.max(0, 100 - val - test);
+  $("segTrain").style.width = train + "%";
+  $("segVal").style.width = val + "%";
+  $("segTest").style.width = test + "%";
+  $("trainPctLbl").textContent = train + "%";
+  $("valPctLbl").textContent = val + "%";
+  $("testPctLbl").textContent = test + "%";
+}
+
+async function startTraining() {
+  const fw = curFramework();
+  if (!fwInstalled(fw)) { alert("Фреймворк не установлен. Запустите setup.ps1."); return; }
+  const augRot = $("augRot").checked, augFlip = $("augFlip").checked;
+  const augBright = $("augBright").checked, augGray = $("augGray").checked;
+  const body = {
+    framework: fw,
+    model_name: state.trainModelId,
+    task_type: curTask(),
+    epochs: Number($("hpEpochs").value) || 50,
+    batch_size: Number($("hpBatch").value) || 4,
+    image_size: Number($("hpImgsz").value) || 0,
+    learning_rate: Number($("hpLr").value) || 0.0001,
+    patience: Math.max(0, Number($("hpPatience").value) || 0),
+    warmup_epochs: Math.max(0, Number($("hpWarmup").value) || 0),
+    weight_decay: Math.max(0, Number($("hpWeightDecay").value) || 0),
+    val_split: clampNum($("valPct").value, 0, 60, 10) / 100,
+    test_split: clampNum($("testPct").value, 0, 40, 0) / 100,
+    augment: augRot || augFlip || augBright || augGray,
+    angles: augRot ? [90, 180, 270] : [],
+    flip_h: augFlip,
+    brightness: augBright,
+    grayscale: augGray,
+    tile: $("tileEnabled").checked,
+    tile_size: clampNum($("tileSize").value, 128, 2048, 640),
+    tile_overlap: clampNum($("tileOverlap").value, 0, 80, 20) / 100,
+    tile_max_images: Math.max(0, Number($("tileMaxImages").value) || 0),
+    tile_empty_ratio: clampNum($("tileEmpty").value, 0, 100, 15) / 100,
+    include_suggested: $("trainIncl").checked,
+  };
+  if (body.epochs < 10 && !confirm(
+      `Очень мало эпох (${body.epochs}). Модель почти не обучится: у YOLO первые ~3 эпохи — это только «разогрев» (warmup), ` +
+      `и результат будет находить ~ноль объектов. Рекомендуется 50–100 эпох (и больше изображений). Всё равно запустить?`)) {
+    return;
+  }
+  try {
+    $("startTrainBtn").disabled = true;
+    await api("POST", `/api/projects/${state.slug}/train`, body);
+    $("stopTrainBtn").classList.remove("hidden");
+    $("stopTrainBtn").disabled = false;
+    $("newTrainBtn").classList.add("hidden");
+    showTrainProgress();
+    startTrainPolling();
+  } catch (err) {
+    alert("Не удалось запустить обучение: " + err.message);
+    $("startTrainBtn").disabled = false;
+  }
+}
+
+function startTrainPolling() {
+  stopTrainPolling();
+  state.trainPoll = setInterval(refreshTrainStatus, 1000);
+  refreshTrainStatus();
+}
+function stopTrainPolling() {
+  if (state.trainPoll) { clearInterval(state.trainPoll); state.trainPoll = null; }
+}
+
+async function refreshTrainStatus() {
+  let st;
+  try { st = await api("GET", "/api/train/status"); } catch { return; }
+  renderTrainStatus(st);
+  if (TRAIN_DONE.includes(st.status)) {
+    stopTrainPolling();
+    $("stopTrainBtn").classList.add("hidden");
+    $("newTrainBtn").classList.remove("hidden");
+    loadTrainedModels();
+  }
+}
+
+function renderTrainStatus(st) {
+  const labels = { preparing: "Подготовка", training: "Обучение", evaluating: "Валидация",
+                   completed: "Завершено ✓", stopped: "Остановлено", error: "Ошибка", idle: "—" };
+  const badge = $("progStatusBadge");
+  badge.textContent = labels[st.status] || st.status || "—";
+  badge.className = "status-badge " + (st.status || "");
+  $("progModel").textContent =
+    `${(st.framework || "").toUpperCase()} · ${st.model_name || ""} · ` +
+    `${st.task === "instance_segmentation" ? "сегментация" : "детекция"}`;
+
+  const pct = Math.max(0, Math.min(100, st.percentage || 0));
+  $("progPct").textContent = pct.toFixed(1) + "%";
+  $("progBar").style.width = pct + "%";
+  $("progEpoch").textContent = `${st.current_epoch || 0} / ${st.total_epochs || 0}`;
+
+  const ti = st.total_iterations || 0, ci = st.current_iteration || 0;
+  $("iterBar").style.width = (ti ? Math.min(100, ci / ti * 100) : 0) + "%";
+  if (st.status === "error") $("iterLbl").textContent = "⚠ " + (st.error || st.message || "Ошибка");
+  else $("iterLbl").textContent = ti ? `Итерация ${ci} / ${ti}` : (st.message || "");
+
+  // Show where the trained checkpoint was written (once available).
+  const bar = $("modelPathBar");
+  if (st.model_path) {
+    $("modelPathText").textContent = st.model_path;
+    $("copyModelPath").onclick = () => copyPath(st.model_path, $("copyModelPath"));
+    bar.classList.remove("hidden");
+  } else {
+    bar.classList.add("hidden");
+  }
+
+  renderMetricCards(st);
+  drawMetricChart(st.history || []);
+  renderTrainLog(st.log || []);
+}
+
+async function copyPath(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+    if (btn) { const old = btn.textContent; btn.textContent = "✓ Скопировано"; setTimeout(() => { btn.textContent = old; }, 1500); }
+  } catch {
+    // Clipboard API may be blocked on http; fall back to a prompt for manual copy.
+    window.prompt("Путь к модели (Ctrl+C для копирования):", text);
+  }
+}
+
+function metricCard(label, value, unit) {
+  return `<div class="metric-card"><div class="mlabel">${label}</div>` +
+    `<div class="mval">${value}<span class="munit">${unit ? " " + unit : ""}</span></div></div>`;
+}
+function renderMetricCards(st) {
+  const num = (v, d = 1) => (v != null && !Number.isNaN(Number(v))) ? Number(v).toFixed(d) : "—";
+  const cards = [
+    metricCard("Прошло", fmtDur(st.elapsed_seconds), ""),
+    metricCard("Осталось (ETA)", st.eta_seconds != null ? fmtDur(st.eta_seconds) : "—", ""),
+    metricCard("Loss", num(st.loss, 3), ""),
+    metricCard("mAP@50:95", num(st.map_50_95), "%"),
+    metricCard("Best AP50", st.best_map_50 ? num(st.best_map_50) : "—", "%"),
+    metricCard("Throughput", st.throughput ? num(st.throughput) : "—", "img/s"),
+    metricCard("Learning rate", st.learning_rate != null ? fmtLr(st.learning_rate) : "—", ""),
+  ];
+  if (st.precision != null) cards.push(metricCard("Precision", num(st.precision), "%"));
+  if (st.recall != null) cards.push(metricCard("Recall", num(st.recall), "%"));
+  $("metricCards").innerHTML = cards.join("");
+}
+function fmtLr(v) { v = Number(v); return v && v < 0.001 ? v.toExponential(1) : v.toFixed(4); }
+function fmtDur(s) {
+  if (s == null) return "—";
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h) return `${h}ч ${m}м`;
+  if (m) return `${m}м ${sec}с`;
+  return `${sec}с`;
+}
+
+function renderTrainLog(lines) {
+  const el = $("trainLog");
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+  el.textContent = lines.join("\n");
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+// Vanilla-canvas line chart of metrics over epochs (no chart library).
+// Left axis = mAP (0..100%), right axis = train loss (0..max). Three series:
+// loss (orange), mAP@50 (blue), mAP@50:95 (green).
+function drawMetricChart(history) {
+  const cv = $("metricChart");
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = cv.clientWidth || 800, cssH = 240;
+  if (cv.width !== Math.round(cssW * dpr)) {
+    cv.width = Math.round(cssW * dpr);
+    cv.height = Math.round(cssH * dpr);
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = cssW, H = cssH;
+  ctx.clearRect(0, 0, W, H);
+  const padL = 36, padR = 46, padT = 12, padB = 22;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const grid = "#3a3d4d", muted = "#9aa0b5";
+
+  ctx.strokeStyle = grid; ctx.lineWidth = 1;
+  ctx.font = "10px sans-serif"; ctx.textAlign = "right";
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + plotH * i / 4;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillStyle = muted; ctx.fillText(String(100 - i * 25), padL - 4, y + 3);
+  }
+  if (!history.length) {
+    ctx.fillStyle = muted; ctx.textAlign = "center";
+    ctx.fillText("Метрики появятся после первой эпохи", W / 2, H / 2);
+    return;
+  }
+  const n = history.length;
+  const xs = (i) => padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1));
+  const losses = history.map((h) => h.loss).filter((v) => v != null);
+  const maxLoss = losses.length ? Math.max(...losses) * 1.1 || 1 : 1;
+
+  ctx.fillStyle = "#ff8a5c"; ctx.textAlign = "left";
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + plotH * i / 4;
+    ctx.fillText((maxLoss * (1 - i / 4)).toFixed(2), W - padR + 4, y + 3);
+  }
+
+  function series(key, color, scale) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    let started = false;
+    history.forEach((h, i) => {
+      if (h[key] == null) return;
+      const y = padT + plotH * (1 - scale(h[key]));
+      if (!started) { ctx.moveTo(xs(i), y); started = true; } else ctx.lineTo(xs(i), y);
+    });
+    ctx.stroke();
+    ctx.fillStyle = color;
+    history.forEach((h, i) => {
+      if (h[key] == null) return;
+      const y = padT + plotH * (1 - scale(h[key]));
+      ctx.beginPath(); ctx.arc(xs(i), y, 2.5, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+  const pctScale = (v) => Math.max(0, Math.min(1, v / 100));
+  series("map_50", "#4f8cff", pctScale);
+  series("map_50_95", "#3cb44b", pctScale);
+  series("loss", "#ff8a5c", (v) => Math.max(0, Math.min(1, v / maxLoss)));
+
+  ctx.fillStyle = muted; ctx.textAlign = "center";
+  const step = Math.max(1, Math.ceil(n / 8));
+  history.forEach((h, i) => {
+    if (i % step === 0 || i === n - 1) ctx.fillText("эп." + h.epoch, xs(i), H - 7);
+  });
+}
+
+async function loadTrainedModels() {
+  try {
+    const r = await api("GET", `/api/projects/${state.slug}/trained_models`);
+    const list = r.models || [];
+    state.trainedModels = list;
+    const ul = $("trainedList"); ul.innerHTML = "";
+    $("trainedEmpty").classList.toggle("hidden", list.length > 0);
+    list.forEach((m) => {
+      const li = document.createElement("li");
+      li.className = "tm-item";
+      li.title = "Показать метрики этой модели";
+      const map = m.best_map_50 != null ? `mAP@50 ${Number(m.best_map_50).toFixed(1)}%` : "";
+      li.innerHTML =
+        `<button class="row-del tm-del" title="Удалить">✕</button>` +
+        `<div class="tm-name">${escapeHtml(m.model_name || "?")}</div>` +
+        `<div class="tm-meta">${(m.framework || "").toUpperCase()} · ` +
+        `${m.task === "instance_segmentation" ? "seg" : "det"} · эпох: ${m.epochs || "?"}</div>` +
+        (map ? `<div class="tm-meta">${map}</div>` : "") +
+        `<span class="tm-badge ${m.status}">${m.status}</span>` +
+        (m.model_path
+          ? `<div class="tm-path" title="${escapeHtml(m.model_path)}">${escapeHtml(m.model_path)}</div>` +
+            `<div class="tm-btns"><button class="tm-test">🔍 Проверить</button>` +
+            `<button class="tm-val" title="Прогнать модель по её валидационной выборке">🖼 Валидация</button>` +
+            `<button class="tm-copy" title="Копировать путь к модели">📋 путь</button></div>`
+          : "");
+      // Clicking the card (but not its buttons) shows this model's own metrics.
+      li.onclick = () => showStoredModelMetrics(m);
+      const del = li.querySelector(".tm-del");
+      del.onclick = (e) => { e.stopPropagation(); deleteTrainedModel(m); };
+      const copyBtn = li.querySelector(".tm-copy");
+      if (copyBtn) copyBtn.onclick = (e) => { e.stopPropagation(); copyPath(m.model_path, copyBtn); };
+      const testBtn = li.querySelector(".tm-test");
+      if (testBtn) testBtn.onclick = (e) => { e.stopPropagation(); openTestDialog(m.run_id); };
+      const valBtn = li.querySelector(".tm-val");
+      if (valBtn) valBtn.onclick = (e) => { e.stopPropagation(); openValidationDialog(m); };
+      ul.appendChild(li);
+    });
+  } catch (e) { console.error("trained models", e); }
+}
+
+// Render a finished model's stored metrics into the dashboard (read-only).
+// Lets the user inspect ANY trained model, not just the most recent run.
+function showStoredModelMetrics(m) {
+  if (state.trainPoll) {
+    alert("Идёт обучение — дождитесь его завершения, чтобы посмотреть метрики другой модели.");
+    return;
+  }
+  const mt = m.metrics || {};
+  const st = {
+    status: m.status,
+    framework: m.framework,
+    model_name: m.model_name,
+    task: m.task,
+    percentage: 100,
+    current_epoch: m.epochs,
+    total_epochs: m.total_epochs || m.epochs,
+    loss: mt.loss,
+    map_50_95: mt.map_50_95 != null ? mt.map_50_95 : m.map_50_95,
+    best_map_50: mt.best_map_50 != null ? mt.best_map_50 : m.best_map_50,
+    precision: mt.precision,
+    recall: mt.recall,
+    learning_rate: mt.learning_rate,
+    throughput: mt.throughput,
+    elapsed_seconds: mt.elapsed_seconds,
+    eta_seconds: null,
+    model_path: m.model_path,
+    history: m.history || [],
+    log: m.log || [],
+    error: m.error,
+    message: m.message || "Сохранённые метрики обученной модели",
+  };
+  showTrainProgress();
+  renderTrainStatus(st);
+  // This is a past run, not a live one: no Stop, allow starting a new run.
+  $("stopTrainBtn").classList.add("hidden");
+  $("newTrainBtn").classList.remove("hidden");
+  // Highlight the selected card.
+  document.querySelectorAll("#trainedList .tm-item.active")
+    .forEach((el) => el.classList.remove("active"));
+  const idx = (state.trainedModels || []).indexOf(m);
+  const li = $("trainedList").children[idx];
+  if (li) li.classList.add("active");
+}
+
+async function deleteTrainedModel(m) {
+  if (!confirm(`Удалить обученную модель «${m.model_name}» и её файлы?`)) return;
+  try {
+    await api("DELETE", `/api/projects/${state.slug}/trained_models/${m.run_id}`);
+    await loadTrainedModels();
+  } catch (err) { alert("Не удалось удалить: " + err.message); }
+}
+
+async function stopTraining() {
+  if (!confirm("Остановить обучение? Текущая эпоха завершится, лучший чекпойнт сохранится.")) return;
+  $("stopTrainBtn").disabled = true;
+  try { await api("POST", "/api/train/stop"); } catch {}
+  setTimeout(() => { $("stopTrainBtn").disabled = false; }, 2000);
+}
+
+// ── Test / inference dialog ───────────────────────────────────────
+function openTestDialog(runId) {
+  const models = (state.trainedModels || []).filter((m) => m.model_path);
+  if (!models.length) { alert("Нет обученной модели с сохранённым файлом."); return; }
+  $("testModel").innerHTML = models.map((m) =>
+    `<option value="${m.run_id}">${escapeHtml(m.model_name || "?")} · ` +
+    `${(m.framework || "").toUpperCase()} · ${m.task === "instance_segmentation" ? "seg" : "det"}</option>`).join("");
+  if (runId) $("testModel").value = runId;
+  // Project images (the dropdown sets image_id; empty = use the path field).
+  const imgs = (state.project && state.project.images) || [];
+  $("testImage").innerHTML = `<option value="">— выбрать изображение проекта —</option>` +
+    imgs.map((im) => `<option value="${im.id}">${escapeHtml(im.filename)}</option>`).join("");
+  if (state.currentImage) $("testImage").value = state.currentImage.id;
+  $("testStatus").textContent = "";
+  $("testResult").classList.add("hidden");
+  $("testDialog").classList.remove("hidden");
+}
+
+async function runTest() {
+  const run_id = $("testModel").value;
+  if (!run_id) { alert("Выберите модель."); return; }
+  const image_id = $("testImage").value || null;
+  const image_path = $("testPath").value.trim() || null;
+  if (!image_id && !image_path) { alert("Выберите изображение проекта или укажите путь к файлу."); return; }
+  const body = {
+    run_id, image_id: image_id || undefined, image_path: image_path || undefined,
+    confidence: Number($("testConf").value) || 0.25,
+    sahi: $("testSahi").checked,
+    slice_size: Number($("testSlice").value) || 640,
+    overlap: Number($("testOverlap").value) || 0.2,
+    iou: Number($("testIou").value) || 0.45,
+    drop_edge: $("testDropEdge").checked,
+  };
+  const btn = $("runTestBtn");
+  btn.disabled = true;
+  $("testStatus").textContent = body.sahi
+    ? "Распознавание с нарезкой SAHI… (может занять время на больших фото)"
+    : "Распознавание…";
+  $("testResult").classList.add("hidden");
+  try {
+    const r = await api("POST", `/api/projects/${state.slug}/predict`, body);
+    const per = r.per_class || {};
+    const parts = Object.keys(per).map((k) => `${escapeHtml(k)}: ${per[k]}`).join(" · ");
+    $("testCounts").textContent =
+      `Найдено объектов: ${r.count}${parts ? " (" + parts + ")" : ""}` +
+      `${r.sahi ? ` · SAHI, тайлов: ${r.tiles}` : ""}` +
+      `${r.sahi && r.edge_dropped ? ` · отброшено на швах: ${r.edge_dropped}` : ""}` +
+      ` · ${r.width}×${r.height}`;
+    $("testImg").src = "data:image/jpeg;base64," + r.image_b64;
+    $("testResult").classList.remove("hidden");
+    $("testStatus").textContent = "";
+  } catch (err) {
+    $("testStatus").textContent = "Ошибка: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Validation gallery (run a finished model on its own val set) ──
+function openValidationDialog(m) {
+  state.valRunId = m.run_id;
+  $("valGrid").innerHTML = "";
+  $("valStatus").textContent =
+    `Модель: ${m.model_name || "?"} · ${(m.framework || "").toUpperCase()} · ` +
+    `${m.task === "instance_segmentation" ? "seg" : "det"}. Нажмите «Проверить».`;
+  $("valDialog").classList.remove("hidden");
+}
+
+async function runValidation() {
+  const run_id = state.valRunId;
+  if (!run_id) return;
+  const body = {
+    run_id,
+    confidence: Number($("valConf").value) || 0.25,
+    limit: Math.max(1, Math.min(48, Number($("valLimit").value) || 12)),
+    sahi: $("valSahi").checked,
+  };
+  const btn = $("runValBtn");
+  btn.disabled = true;
+  $("valStatus").textContent = "Прогон по валидации… (модель загружается один раз, затем все фото)";
+  $("valGrid").innerHTML = "";
+  try {
+    const r = await api("POST", `/api/projects/${state.slug}/trained_models/${run_id}/validate`, body);
+    const results = r.results || [];
+    $("valStatus").textContent =
+      `Показано ${r.shown} из ${r.total_val} валидационных фото · ` +
+      `всего найдено объектов: ${results.reduce((s, x) => s + (x.count || 0), 0)}`;
+    $("valGrid").innerHTML = results.map((x) => {
+      if (x.error) {
+        return `<div class="val-cell"><div class="val-meta">${escapeHtml(x.name || "")}: ${escapeHtml(x.error)}</div></div>`;
+      }
+      const per = x.per_class || {};
+      const parts = Object.keys(per).map((k) => `${escapeHtml(k)}: ${per[k]}`).join(", ");
+      return `<div class="val-cell">` +
+        `<img src="data:image/jpeg;base64,${x.image_b64}" alt="${escapeHtml(x.name || "")}" />` +
+        `<div class="val-meta">${escapeHtml(x.name || "")} — объектов: ${x.count || 0}` +
+        `${parts ? ` (${parts})` : ""}</div></div>`;
+    }).join("");
+  } catch (err) {
+    $("valStatus").textContent = "Ошибка: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 init();
