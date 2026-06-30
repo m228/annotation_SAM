@@ -8,9 +8,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.py[cod]
 *.egg-info/
-dist/
-build/
 *.egg
 
 # ── Virtual envs ─────────────────────────────────────────────────
@@ -21,10 +20,6 @@ build/
 /VisoLabel/venv
 
 # ── Large binary assets (not in repo — distributed separately) ───
-# JetBrains IDE
-/.idea
-
-# External / bundled sources not versioned in this repo
 /VisoLabel
 /analyz
 /QuickLabel/wheels
@@ -38,38 +33,11 @@ build/
 /QuickLabel/dist
 /QuickLabel/QuickLabel.exe
 
-# ── Project user data (images & generated training runs) ─────────
-# Keep project.json config; skip heavy image & training folders
-QuickLabel/projects/*/_train/
-QuickLabel/projects/*/images/
-
-# Test/scratch projects (large annotation blobs, not real data)
-QuickLabel/projects/12/
-QuickLabel/projects/123/
-QuickLabel/projects/new/
+# ── Project user data ─────────────────────────────────────────────
+# The entire projects/ dir is untracked by default (user data, machine-specific).
+# Already-tracked project.json files (sugar, lvl_dec) stay tracked.
+/QuickLabel/projects
 
 # ── Logs & scratch ───────────────────────────────────────────────
 /QuickLabel/flow.txt
 /QuickLabel/flow_err.txt
-/analyz
-
-# ── Excluded sub-repos ───────────────────────────────────────────
-/VisoLabel
-
-
-# Python virtual environments (large, machine-specific — recreate via setup.ps1)
-/.venv
-/QuickLabel/venv
-/QuickLabel/.venv
-
-# Python bytecode
-__pycache__/
-*.py[cod]
-
-# Downloaded model weights (large binaries)
-/QuickLabel/*.pt
-
-# Local annotation projects, uploaded images and training runs (user data,
-# machine-specific paths). Already-tracked project.json files stay tracked.
-/QuickLabel/projects
-
