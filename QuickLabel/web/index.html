@@ -24,6 +24,7 @@
         <button data-target="coco">RF-DETR — COCO JSON (segmentation)</button>
       </div>
     </div>
+    <button id="trainBtn" disabled title="Обучить модель на размеченном датасете">🎓 Обучить модель</button>
   </header>
 
   <main id="workspace" class="hidden">
@@ -36,6 +37,7 @@
       <div class="panel-actions">
         <button id="importFolderBtn">Импорт папки</button>
         <button id="uploadBtn">Загрузить файлы</button>
+        <button id="importDatasetBtn" title="Импорт уже размеченного датасета YOLO или RF-DETR (COCO)">Импорт разметки</button>
         <input type="file" id="uploadInput" accept="image/*" multiple hidden />
       </div>
       <ul id="imageList"></ul>
@@ -44,15 +46,29 @@
     <!-- ── Center: canvas ────────────────────────────────── -->
     <section id="canvasPanel">
       <div id="toolbar">
-        <button class="tool tool-cursor" data-tool="select" title="Выбор / перемещение рамок">↖</button>
-        <button class="tool" data-tool="box" title="Ручная рамка (прямоугольник) — клавиша 1">▭ Рамка</button>
-        <button class="tool" data-tool="poly" title="Ручной многоугольник: клики по точкам, замкнуть двойным кликом или Enter — клавиша 2">⬠ Полигон</button>
-        <button class="tool" data-tool="sam-point" title="SAM 2: клик по объекту — клавиша 3">● SAM-точка</button>
-        <button class="tool" data-tool="sam-box" title="SAM 2: рамка вокруг объекта — клавиша 4">⬚ SAM-рамка</button>
+        <button class="tool tool-cursor" data-tool="select" title="Курсор: выбор / перемещение рамок — клавиша 1">🖱 Курсор</button>
+        <button class="tool" data-tool="box" title="Ручная рамка (прямоугольник) — клавиша 2">▭ Рамка</button>
+        <button class="tool" data-tool="poly" title="Ручной многоугольник: клики по точкам, замкнуть двойным кликом или Enter — клавиша 3">⬠ Полигон</button>
+        <button class="tool" data-tool="sam-point" title="SAM 2: клик по объекту — клавиша 4">● SAM-точка</button>
+        <button class="tool" data-tool="sam-box" title="SAM 2: рамка вокруг объекта — клавиша 5">⬚ SAM-рамка</button>
         <div class="tool-sep"></div>
         <div class="sam3-inline">
           <input id="sam3Prompt" type="text" placeholder="SAM 3: класс/запрос (напр. car)" />
           <button id="sam3AutoBtn" title="Найти объекты выбранного класса на текущем изображении">SAM 3 ►</button>
+          <div class="sahi-menu">
+            <button id="sahiToggleBtn" type="button" title="SAHI: нарезка на тайлы для мелких объектов">✂ SAHI ▾</button>
+            <div id="sahiPopover" class="sahi-popover hidden">
+              <label class="checkbox"><input type="checkbox" id="samSahi" /> Включить нарезку (SAHI)</label>
+              <label class="small">Размер тайла, px
+                <input id="samSlice" type="number" min="128" step="64" value="512" /></label>
+              <label class="small">Перекрытие (0–0.5)
+                <input id="samOverlap" type="number" min="0" max="0.5" step="0.05" value="0.2" /></label>
+              <label class="small">IoU дедупликации
+                <input id="samIou" type="number" min="0.1" max="0.9" step="0.05" value="0.45" /></label>
+              <label class="checkbox" title="Кристалл, разрезанный швом тайла, выделяется рвано двумя половинами. Их отбрасываем — целый кристалл даёт проход по всему фото."><input type="checkbox" id="samDropEdge" checked /> Не выделять кристаллы на швах тайлов</label>
+              <p id="samSahiForecast" class="muted small"></p>
+            </div>
+          </div>
         </div>
         <div class="tool-sep"></div>
         <button id="prevImg" title="Предыдущее">◀</button>
@@ -167,6 +183,243 @@
         <button id="doExportBtn" class="primary">Экспортировать</button>
         <button id="closeExportBtn">Закрыть</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ── Training page (fullscreen overlay) ────────────────── -->
+  <section id="trainView" class="train-view hidden">
+    <header class="train-head">
+      <button id="trainBack">← К разметке</button>
+      <div class="train-title">
+        <h2>Обучение модели</h2>
+        <span id="trainSubtitle" class="muted small"></span>
+      </div>
+      <span class="spacer"></span>
+      <span id="trainDevice" class="sam-status">устройство: …</span>
+    </header>
+
+    <div class="train-body">
+      <!-- Left rail: previously trained models -->
+      <aside class="trained-rail">
+        <div class="panel-head"><span>Обученные модели</span></div>
+        <ul id="trainedList"></ul>
+        <div id="trainedEmpty" class="muted small empty-models">
+          Пока нет обученных моделей.<br>Настройте и запустите обучение справа.
+        </div>
+      </aside>
+
+      <!-- Main column -->
+      <div class="train-main">
+        <!-- ── SETUP PHASE ── -->
+        <div id="trainSetup" class="train-setup">
+          <div id="depWarn" class="dep-warn hidden"></div>
+          <div class="setup-grid">
+            <div class="setup-card">
+              <h4>Тип задачи</h4>
+              <div class="opt-row">
+                <label class="opt"><input type="radio" name="taskType" value="object_detection" checked>
+                  <span>Object Detection<small>Ограничивающие рамки</small></span></label>
+                <label class="opt"><input type="radio" name="taskType" value="instance_segmentation">
+                  <span>Instance Segmentation<small>Полигоны / маски</small></span></label>
+              </div>
+            </div>
+
+            <div class="setup-card">
+              <h4>Фреймворк</h4>
+              <div class="opt-row">
+                <label class="opt"><input type="radio" name="framework" value="rfdetr" checked>
+                  <span>RF-DETR<small id="fwRfdetr" class="muted">проверка…</small></span></label>
+                <label class="opt"><input type="radio" name="framework" value="yolo">
+                  <span>YOLO<small id="fwYolo" class="muted">проверка…</small></span></label>
+              </div>
+            </div>
+
+            <div class="setup-card wide">
+              <h4>Модель</h4>
+              <div id="modelCards" class="model-cards"></div>
+            </div>
+
+            <div class="setup-card">
+              <h4>Разбиение датасета</h4>
+              <div class="split-bar">
+                <span class="seg train" id="segTrain"></span>
+                <span class="seg val" id="segVal"></span>
+                <span class="seg test" id="segTest"></span>
+              </div>
+              <div class="split-legend muted small">
+                <span><i class="dot train"></i>Train <b id="trainPctLbl">80%</b></span>
+                <span><i class="dot val"></i>Val <b id="valPctLbl">10%</b></span>
+                <span><i class="dot test"></i>Test <b id="testPctLbl">10%</b></span>
+              </div>
+              <label class="small">Валидация, %
+                <input id="valPct" type="number" min="5" max="50" step="5" value="10"></label>
+              <label class="small">Тест, %
+                <input id="testPct" type="number" min="0" max="40" step="5" value="10"></label>
+              <div class="aug-group">
+                <div class="aug-title muted small">Аугментации (доп. копии train-выборки):</div>
+                <label class="checkbox"><input type="checkbox" id="augRot"> Повороты 90/180/270°</label>
+                <label class="checkbox"><input type="checkbox" id="augFlip"> Отражение по горизонтали</label>
+                <label class="checkbox"><input type="checkbox" id="augBright"> Яркость / контраст</label>
+                <label class="checkbox"><input type="checkbox" id="augGray"> Оттенки серого</label>
+              </div>
+              <div class="aug-group">
+                <div class="aug-title muted small">Нарезка на тайлы (для мелких объектов):</div>
+                <label class="checkbox"><input type="checkbox" id="tileEnabled"> Резать train-кадры на тайлы</label>
+                <div id="tileOpts" class="tile-opts hidden">
+                  <label class="small">Размер тайла, px
+                    <input id="tileSize" type="number" min="128" max="2048" step="32" value="640"></label>
+                  <label class="small">Перекрытие, %
+                    <input id="tileOverlap" type="number" min="0" max="80" step="5" value="20"></label>
+                  <label class="small">Сколько кадров резать (0 = все)
+                    <input id="tileMaxImages" type="number" min="0" step="1" value="0"></label>
+                  <label class="small">Доля пустых тайлов (фон), %
+                    <input id="tileEmpty" type="number" min="0" max="100" step="5" value="15"></label>
+                  <small class="hp-hint muted">Кадр режется на окна <b>tile×tile</b> с перекрытием — мелкие объекты остаются в исходном разрешении. Тайлы добавляются <b>дополнительно</b> к полным кадрам, только в train.</small>
+                </div>
+              </div>
+              <label class="checkbox"><input type="checkbox" id="trainIncl"> Включить неподтверждённые предложения</label>
+            </div>
+
+            <div class="setup-card">
+              <h4>Гиперпараметры</h4>
+              <div class="hp-field">
+                <label class="small">Эпохи <input id="hpEpochs" type="number" min="1" value="50"></label>
+                <small class="hp-hint muted">Сколько полных проходов по датасету. Больше — выше точность, но дольше и риск переобучения. Обычно <b>50–100</b>.</small>
+              </div>
+              <div class="hp-field">
+                <label class="small">Batch size <input id="hpBatch" type="number" min="1" value="4"></label>
+                <small class="hp-hint muted">Изображений за один шаг. Больше — стабильнее и быстрее, но нужно больше видеопамяти. <b>YOLO ~16, RF-DETR ~4</b>. Уменьшите при ошибке нехватки VRAM.</small>
+              </div>
+              <div class="hp-field">
+                <label class="small">Image size <input id="hpImgsz" type="number" min="96" step="32" value="640"></label>
+                <small class="hp-hint muted">Разрешение входа (пикс). Больше — лучше на мелких объектах, но медленнее и больше VRAM. <b>YOLO 640</b>; RF-DETR подставляется под модель (312–704).</small>
+              </div>
+              <div class="hp-field">
+                <label class="small">Learning rate <input id="hpLr" type="number" min="0" step="0.0001" value="0.0001"></label>
+                <small class="hp-hint muted">Скорость обновления весов. Слишком большой — расходимость, слишком малый — учится медленно. <b>YOLO ~0.01, RF-DETR ~0.0001</b>.</small>
+              </div>
+              <div class="hp-field">
+                <label class="small">Ранняя остановка (patience) <input id="hpPatience" type="number" min="0" value="0"></label>
+                <small class="hp-hint muted">Остановить, если метрика на валидации не улучшается N эпох подряд (защита от переобучения и трата времени впустую). <b>0 — выключено</b>; типично <b>5–15</b>. Лучший чекпойнт сохраняется.</small>
+              </div>
+              <div class="hp-field">
+                <label class="small">Warmup epochs <input id="hpWarmup" type="number" min="0" step="0.5" value="0"></label>
+                <small class="hp-hint muted">Плавный разгон learning rate в первые эпохи — стабилизирует старт, без него возможны скачки loss и «ноль объектов» в начале. <b>0 — дефолт фреймворка</b> (YOLO ~3). Обычно <b>1–5</b>.</small>
+              </div>
+              <div class="hp-field">
+                <label class="small">Weight decay <input id="hpWeightDecay" type="number" min="0" step="0.0001" value="0"></label>
+                <small class="hp-hint muted">L2-регуляризация весов — против переобучения на маленьком датасете. <b>0 — дефолт фреймворка</b> (YOLO ~0.0005, RF-DETR ~1e-4). Больше = сильнее «сглаживает», но может недоучить.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="setup-actions">
+            <span id="trainEstimate" class="muted small"></span>
+            <button id="startTrainBtn" class="primary">▶ Обучить локально</button>
+          </div>
+        </div>
+
+        <!-- ── PROGRESS PHASE ── -->
+        <div id="trainProgress" class="train-progress hidden">
+          <div class="prog-top">
+            <div>
+              <span id="progStatusBadge" class="status-badge">…</span>
+              <span id="progModel" class="muted small"></span>
+            </div>
+            <div class="prog-pct"><span id="progPct">0.0%</span> <small>выполнено</small></div>
+            <div class="prog-epoch">Эпоха <b id="progEpoch">0 / 0</b></div>
+          </div>
+
+          <div class="bar"><div id="progBar" class="bar-fill"></div></div>
+          <div id="iterLbl" class="muted small iter-lbl"></div>
+          <div class="bar thin"><div id="iterBar" class="bar-fill alt"></div></div>
+
+          <div id="metricCards" class="metric-cards"></div>
+
+          <div class="chart-card">
+            <div class="panel-head">
+              <span>Метрики по эпохам</span>
+              <span class="chart-legend small">
+                <i class="dot loss"></i>loss
+                <i class="dot map"></i>mAP@50
+                <i class="dot map95"></i>mAP@50:95
+              </span>
+            </div>
+            <canvas id="metricChart" width="820" height="240"></canvas>
+          </div>
+
+          <div class="log-card">
+            <div class="panel-head"><span>Журнал обучения (live)</span></div>
+            <pre id="trainLog" class="train-log"></pre>
+          </div>
+
+          <div id="modelPathBar" class="model-path-bar hidden">
+            <span class="mp-label">📦 Файл модели:</span>
+            <code id="modelPathText" class="mp-path" title="Полный путь к обученной модели"></code>
+            <button id="copyModelPath" class="mp-copy" title="Копировать путь">📋 Копировать</button>
+          </div>
+
+          <div class="prog-actions">
+            <button id="stopTrainBtn" class="danger">■ Остановить</button>
+            <button id="newTrainBtn" class="hidden">Новое обучение</button>
+            <button id="backFromProgress">Закрыть страницу</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Test / inference dialog ────────────────────────────── -->
+  <div id="testDialog" class="modal hidden">
+    <div class="modal-card test-card">
+      <h3>Проверить модель</h3>
+      <label>Модель
+        <select id="testModel"></select>
+      </label>
+      <label>Изображение проекта
+        <select id="testImage"></select>
+      </label>
+      <label>…или путь к файлу
+        <input id="testPath" type="text" placeholder="C:\путь\к\фото.jpg (необязательно)" />
+      </label>
+      <label class="small">Уверенность (confidence)
+        <input id="testConf" type="number" min="0.01" max="0.99" step="0.05" value="0.25" />
+      </label>
+      <label class="checkbox"><input type="checkbox" id="testSahi" /> SAHI — нарезка на тайлы (для мелких объектов на больших фото)</label>
+      <div id="sahiRow" class="sahi-row hidden">
+        <label class="small">Размер тайла, px <input id="testSlice" type="number" min="128" step="64" value="640" /></label>
+        <label class="small">Перекрытие (0–0.5) <input id="testOverlap" type="number" min="0" max="0.5" step="0.05" value="0.2" /></label>
+        <label class="small">IoU слияния <input id="testIou" type="number" min="0.1" max="0.9" step="0.05" value="0.45" /></label>
+        <label class="checkbox" title="Объект, разрезанный швом тайла, выделяется рвано. Его берёт соседний тайл целиком (за счёт перекрытия), а рваную половину отбрасываем."><input type="checkbox" id="testDropEdge" checked /> Отбрасывать объекты на швах тайлов (убирает рваные кристаллы на краях)</label>
+      </div>
+      <p class="muted small">Совет: для фото 2046×2046 с мелкими кристаллами включите SAHI и поставьте размер тайла близкий к разрешению модели (так тайлы почти не уменьшаются и мелкие объекты не теряются).</p>
+      <div class="test-actions">
+        <button id="runTestBtn" class="primary">Распознать</button>
+        <button id="closeTestBtn">Закрыть</button>
+      </div>
+      <div id="testStatus" class="muted small"></div>
+      <div id="testResult" class="test-result hidden">
+        <div id="testCounts" class="test-counts"></div>
+        <div class="test-img-wrap"><img id="testImg" alt="результат" /></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Validation gallery dialog ──────────────────────────── -->
+  <div id="valDialog" class="modal hidden">
+    <div class="modal-card val-card">
+      <h3>Проверка на валидационной выборке</h3>
+      <p class="muted small">Модель прогоняется по изображениям, которые она НЕ видела при обучении
+        (валидация). Так видно реальное качество — есть ли пропуски, ложные срабатывания, рваные маски.</p>
+      <div class="val-controls">
+        <label class="small">Уверенность <input id="valConf" type="number" min="0.01" max="0.99" step="0.05" value="0.25" /></label>
+        <label class="small">Сколько фото <input id="valLimit" type="number" min="1" max="48" step="1" value="12" /></label>
+        <label class="checkbox"><input type="checkbox" id="valSahi" /> SAHI</label>
+        <button id="runValBtn" class="primary">Проверить</button>
+        <button id="closeValBtn">Закрыть</button>
+      </div>
+      <div id="valStatus" class="muted small"></div>
+      <div id="valGrid" class="val-grid"></div>
     </div>
   </div>
 
