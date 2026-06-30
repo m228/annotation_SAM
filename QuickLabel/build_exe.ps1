@@ -121,6 +121,11 @@ if ($Full) {
     # Inject freshly-built exe (gitignored, so not in archive)
     Copy-Item (Join-Path $Root "QuickLabel.exe") (Join-Path $Stage "QuickLabel\QuickLabel.exe") -Force
 
+    # Inject the working-tree VERSION. `git archive` packs the *committed* VERSION,
+    # which lags behind the file you just bumped — without this the zip would ship a
+    # stale version (the "always 1.0.0" bug). ASCII, no trailing newline.
+    Set-Content -Path (Join-Path $Stage "QuickLabel\VERSION") -Value $Version -NoNewline -Encoding ascii
+
     if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
     Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $ZipPath
     Remove-Item $Stage -Recurse -Force
