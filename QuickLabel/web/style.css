@@ -47,34 +47,30 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .sam-status.err { color: var(--danger); border-color: var(--danger); }
 
 /* ── Update indicator ── */
-.update-btn {
-  width: 28px; height: 28px; border-radius: 50%;
-  padding: 0; font-size: 15px;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  transition: box-shadow 0.2s, background 0.2s;
-  position: relative;
+.update-wrap {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
 }
-.update-btn.checking { opacity: 0.4; }
-.update-btn.ok {
-  background: rgba(60,180,75,0.12); border-color: var(--accent2); color: var(--accent2);
+.update-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  padding: 0; border: none; cursor: default; flex-shrink: 0;
+  transition: box-shadow 0.2s, background 0.3s;
 }
-.update-btn.ok:hover:not(:disabled) {
-  background: rgba(60,180,75,0.22);
-  box-shadow: 0 0 0 3px rgba(60,180,75,0.18);
-}
-.update-btn.available {
-  background: rgba(245,196,0,0.13); border-color: #f5c400; color: #f5c400;
+.update-dot.checking { background: var(--muted, #666); opacity: 0.35; }
+.update-dot.ok       { background: #3cb44b; box-shadow: 0 0 0 3px rgba(60,180,75,0.18); }
+.update-dot.available {
+  background: #f5c400;
   animation: upd-pulse 2.2s ease-in-out infinite;
 }
-.update-btn.available:hover:not(:disabled) {
-  background: rgba(245,196,0,0.22);
-  box-shadow: 0 0 0 3px rgba(245,196,0,0.25);
+.update-dot.error    { background: var(--muted, #666); opacity: 0.25; }
+.update-download {
+  font-size: 12px; padding: 3px 10px;
+  background: rgba(245,196,0,0.12); border-color: #f5c400; color: #f5c400;
+  transition: background 0.15s;
 }
-.update-btn.error { opacity: 0.35; }
+.update-download:hover { background: rgba(245,196,0,0.24); }
 @keyframes upd-pulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(245,196,0,0.45); }
-  50%      { box-shadow: 0 0 0 7px rgba(245,196,0,0); }
+  0%,100% { box-shadow: 0 0 0 0 rgba(245,196,0,0.6); }
+  50%      { box-shadow: 0 0 0 6px rgba(245,196,0,0); }
 }
 
 /* ── Layout ── */

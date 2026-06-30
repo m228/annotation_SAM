@@ -1835,29 +1835,30 @@ async function runValidation() {
 
 // ── Update check ──────────────────────────────────────────────────
 async function checkForUpdates() {
-  const btn = $("updateBtn");
+  const dot = $("updateBtn");
+  const dlBtn = $("updateDownloadBtn");
   try {
     const d = await api("GET", "/api/update/check");
-    btn.disabled = false;
+    dot.disabled = false;
     if (d.error) {
-      btn.className = "update-btn error";
-      btn.title = `Не удалось проверить обновления: ${d.error}`;
+      dot.className = "update-dot error";
+      dot.title = `Не удалось проверить обновления: ${d.error}`;
       return;
     }
     if (d.update_available) {
-      btn.className = "update-btn available";
-      btn.title = `Доступно обновление ${d.release_name || "v" + d.latest_version} `
-                + `(установлено: v${d.current_version}). Нажмите, чтобы открыть страницу релиза.`;
-      btn.onclick = () => window.open(d.release_url, "_blank");
+      dot.className = "update-dot available";
+      dot.title = `Доступно обновление ${d.release_name || "v" + d.latest_version} (установлено: v${d.current_version})`;
+      dlBtn.classList.remove("hidden");
+      dlBtn.onclick = () => window.open(d.release_url, "_blank");
     } else {
-      btn.className = "update-btn ok";
-      btn.title = `QuickLabel v${d.current_version} — последняя версия`;
-      btn.onclick = null;
+      dot.className = "update-dot ok";
+      dot.title = `QuickLabel v${d.current_version} — последняя версия`;
+      dlBtn.classList.add("hidden");
     }
   } catch {
-    btn.disabled = false;
-    btn.className = "update-btn error";
-    btn.title = "Ошибка проверки обновлений";
+    dot.disabled = false;
+    dot.className = "update-dot error";
+    dot.title = "Ошибка проверки обновлений";
   }
 }
 

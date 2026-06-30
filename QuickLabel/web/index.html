@@ -16,7 +16,10 @@
       <button id="delProjectBtn" title="Удалить выбранный проект" disabled>🗑 Удалить</button>
     </div>
     <div class="spacer"></div>
-    <button id="updateBtn" class="update-btn checking" title="Проверка обновлений…" disabled>💡</button>
+    <div class="update-wrap">
+      <button id="updateBtn" class="update-dot checking" title="Проверка обновлений…" disabled></button>
+      <button id="updateDownloadBtn" class="update-download hidden">↓ Скачать обновление</button>
+    </div>
     <span id="samStatus" class="sam-status" title="Статус AI">AI: …</span>
     <div class="export-menu">
       <button id="exportBtn" class="primary" disabled>Экспорт ▾</button>
