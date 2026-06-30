@@ -19,7 +19,7 @@ import subprocess
 import sys
 import threading
 
-from .config import QUICKLABEL_DIR, ensure_ml_backend_importable
+from .config import QUICKLABEL_DIR, BUNDLE_DIR, find_python_executable, ensure_ml_backend_importable
 
 
 class SamRuntime:
@@ -45,11 +45,14 @@ class SamRuntime:
 
     def _start(self) -> None:
         ensure_ml_backend_importable()  # populates ML_BACKEND_SAM*_PATH + alloc conf
+        python = find_python_executable()
         env = os.environ.copy()
-        env["PYTHONPATH"] = str(QUICKLABEL_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+        # BUNDLE_DIR contains ml_backend source files (as datas when frozen,
+        # as the project root when running from source).
+        env["PYTHONPATH"] = str(BUNDLE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
         env["PYTHONUNBUFFERED"] = "1"
         self._proc = subprocess.Popen(
-            [sys.executable, "-m", "ml_backend", "sam"],
+            [python, "-m", "ml_backend", "sam"],
             cwd=str(QUICKLABEL_DIR),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None,
             env=env, text=True, encoding="utf-8", bufsize=1,

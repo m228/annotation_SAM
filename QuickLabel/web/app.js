@@ -1238,6 +1238,7 @@ function init() {
   setTool("select");
   loadProjects();
   checkHealth();
+  checkForUpdates();
 }
 
 // ══════════════ Training page ══════════════
@@ -1829,6 +1830,34 @@ async function runValidation() {
     $("valStatus").textContent = "Ошибка: " + err.message;
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ── Update check ──────────────────────────────────────────────────
+async function checkForUpdates() {
+  const btn = $("updateBtn");
+  try {
+    const d = await api("GET", "/api/update/check");
+    btn.disabled = false;
+    if (d.error) {
+      btn.className = "update-btn error";
+      btn.title = `Не удалось проверить обновления: ${d.error}`;
+      return;
+    }
+    if (d.update_available) {
+      btn.className = "update-btn available";
+      btn.title = `Доступно обновление ${d.release_name || "v" + d.latest_version} `
+                + `(установлено: v${d.current_version}). Нажмите, чтобы открыть страницу релиза.`;
+      btn.onclick = () => window.open(d.release_url, "_blank");
+    } else {
+      btn.className = "update-btn ok";
+      btn.title = `QuickLabel v${d.current_version} — последняя версия`;
+      btn.onclick = null;
+    }
+  } catch {
+    btn.disabled = false;
+    btn.className = "update-btn error";
+    btn.title = "Ошибка проверки обновлений";
   }
 }
 

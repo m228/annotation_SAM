@@ -46,6 +46,37 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .sam-status.ok { color: var(--accent2); border-color: var(--accent2); }
 .sam-status.err { color: var(--danger); border-color: var(--danger); }
 
+/* ── Update indicator ── */
+.update-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  padding: 0; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: box-shadow 0.2s, background 0.2s;
+  position: relative;
+}
+.update-btn.checking { opacity: 0.4; }
+.update-btn.ok {
+  background: rgba(60,180,75,0.12); border-color: var(--accent2); color: var(--accent2);
+}
+.update-btn.ok:hover:not(:disabled) {
+  background: rgba(60,180,75,0.22);
+  box-shadow: 0 0 0 3px rgba(60,180,75,0.18);
+}
+.update-btn.available {
+  background: rgba(245,196,0,0.13); border-color: #f5c400; color: #f5c400;
+  animation: upd-pulse 2.2s ease-in-out infinite;
+}
+.update-btn.available:hover:not(:disabled) {
+  background: rgba(245,196,0,0.22);
+  box-shadow: 0 0 0 3px rgba(245,196,0,0.25);
+}
+.update-btn.error { opacity: 0.35; }
+@keyframes upd-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(245,196,0,0.45); }
+  50%      { box-shadow: 0 0 0 7px rgba(245,196,0,0); }
+}
+
 /* ── Layout ── */
 #workspace { flex: 1; display: grid; grid-template-columns: 240px 1fr 280px; overflow: hidden; }
 aside, #canvasPanel { display: flex; flex-direction: column; overflow: hidden; }

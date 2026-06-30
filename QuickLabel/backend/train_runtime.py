@@ -26,7 +26,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Optional
 
-from .config import QUICKLABEL_DIR, ensure_ml_backend_importable
+from .config import QUICKLABEL_DIR, BUNDLE_DIR, find_python_executable, ensure_ml_backend_importable
 from .store import ProjectStore
 from . import coco_export, yolo_export
 
@@ -177,15 +177,16 @@ class TrainManager:
             # 3) Spawn the trainer subprocess.
             ensure_ml_backend_importable()
             env = os.environ.copy()
-            env["PYTHONPATH"] = str(QUICKLABEL_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = str(BUNDLE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
             env["PYTHONUNBUFFERED"] = "1"
             # Force UTF-8 stdio in the child so Russian/log text isn't mangled
             # (Windows defaults stdout/stderr pipes to cp1251 → mojibake here).
             env["PYTHONIOENCODING"] = "utf-8"
             env["PYTHONUTF8"] = "1"
+            python = find_python_executable()
             command = "train-yolo" if framework == "yolo" else "train"
             self._proc = subprocess.Popen(
-                [sys.executable, "-m", "ml_backend", command, "--config", str(config_path)],
+                [python, "-m", "ml_backend", command, "--config", str(config_path)],
                 cwd=str(QUICKLABEL_DIR),
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 env=env, text=True, encoding="utf-8", errors="replace", bufsize=1,
