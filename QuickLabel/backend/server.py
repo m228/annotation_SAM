@@ -755,25 +755,6 @@ def check_update():
     return updater.check_latest()
 
 
-@app.get("/api/update/download")
-def download_update():
-    """Download the latest release zip into the staging area (frozen bundle only)."""
-    from . import updater
-    return updater.download_latest()
-
-
-@app.get("/api/update/apply")
-def apply_update():
-    """Launch the detached PowerShell updater, then exit so it can replace our files."""
-    import threading
-    from . import updater
-    result = updater.apply_update()
-    if result.get("ok"):
-        # Let the HTTP response reach the client before we exit
-        threading.Timer(2.0, lambda: os._exit(0)).start()
-    return result
-
-
 @app.get("/api/health")
 def health():
     return runtime.health()

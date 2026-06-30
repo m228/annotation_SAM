@@ -1867,6 +1867,8 @@ async function checkForUpdates() {
   }
 }
 
+const RELEASES_URL = "https://github.com/m228/annotation_SAM/releases";
+
 function openUpdateModal() {
   const d = _updData;
   $("updCurrent").textContent = d ? `v${d.current_version}` : "—";
@@ -1874,14 +1876,22 @@ function openUpdateModal() {
   setUpdStatus("", "");
   clearUpdActions();
   if (d && d.update_available) {
-    setUpdStatus("Доступна новая версия", "warn");
-    addUpdBtn("Скачать обновление", "primary", doDownload);
+    setUpdStatus("Доступна новая версия — скачайте её на странице релизов GitHub", "warn");
+    addUpdBtn("Открыть страницу релизов", "primary", openReleasesPage);
   } else if (d && !d.error) {
     setUpdStatus("Установлена последняя версия", "ok");
+    addUpdBtn("Открыть страницу релизов", "", openReleasesPage);
   } else if (d && d.error) {
     setUpdStatus(d.error, "error");
+    addUpdBtn("Открыть страницу релизов", "", openReleasesPage);
+  } else {
+    addUpdBtn("Открыть страницу релизов", "", openReleasesPage);
   }
   $("updateModal").classList.remove("hidden");
+}
+
+function openReleasesPage() {
+  window.open(RELEASES_URL, "_blank", "noopener");
 }
 
 function setUpdStatus(msg, cls) {
@@ -1899,66 +1909,6 @@ function addUpdBtn(label, cls, handler) {
   btn.onclick = handler;
   $("updActions").appendChild(btn);
   return btn;
-}
-
-async function doDownload() {
-  clearUpdActions();
-  setUpdStatus("", "");
-  const el = $("updStatus");
-  el.innerHTML = '<span class="upd-spinner"></span>Скачиваю обновление…';
-  el.className = "upd-status";
-
-  let d;
-  try { d = await api("GET", "/api/update/download"); }
-  catch { d = null; }
-
-  if (!d || !d.ok) {
-    setUpdStatus(d?.error || "Не удалось скачать обновление", "error");
-    addUpdBtn("Повторить", "primary", doDownload);
-    return;
-  }
-
-  setUpdStatus(`Версия ${d.version || ""} загружена и готова к установке`, "ok");
-  addUpdBtn("Обновить и перезапустить", "primary", doApply);
-}
-
-async function doApply() {
-  if (!confirm("Приложение закроется, обновит файлы и запустится заново. Продолжить?")) return;
-  clearUpdActions();
-  setUpdStatus("Запускаю обновление…", "warn");
-
-  let d;
-  try { d = await api("GET", "/api/update/apply"); }
-  catch { d = null; }
-
-  if (!d || !d.ok) {
-    setUpdStatus(d?.error || "Не удалось запустить обновление", "error");
-    addUpdBtn("Повторить", "primary", doApply);
-    return;
-  }
-
-  setUpdStatus("Приложение перезапускается, подождите…", "warn");
-  $("closeUpdateBtn").disabled = true;
-  await pollUntilBack();
-}
-
-async function pollUntilBack(timeoutMs = 180_000) {
-  const started = Date.now();
-  await new Promise(r => setTimeout(r, 5000));
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const r = await fetch("/api/update/check", { cache: "no-store" });
-      if (r.ok) {
-        setUpdStatus("Готово! Перезагружаю страницу…", "ok");
-        await new Promise(r => setTimeout(r, 1200));
-        window.location.reload();
-        return;
-      }
-    } catch { /* server restarting — expected */ }
-    await new Promise(r => setTimeout(r, 2500));
-  }
-  setUpdStatus("Сервер долго не отвечает. Обновите страницу вручную.", "error");
-  $("closeUpdateBtn").disabled = false;
 }
 
 function initUpdateModal() {
