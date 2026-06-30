@@ -41,3 +41,5 @@ __pycache__/
 # ── Logs & scratch ───────────────────────────────────────────────
 /QuickLabel/flow.txt
 /QuickLabel/flow_err.txt
+/tmp
+/tasks
