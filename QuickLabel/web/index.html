@@ -427,6 +427,26 @@
     </div>
   </div>
 
+  <!-- ── Update modal ────────────────────────────────────────────── -->
+  <div id="updateModal" class="modal hidden">
+    <div class="modal-card update-modal-card">
+      <h3>Обновление QuickLabel</h3>
+      <div class="update-ver-row">
+        <span class="muted small">Установлена:</span>
+        <strong id="updCurrent">—</strong>
+      </div>
+      <div class="update-ver-row">
+        <span class="muted small">Доступна:</span>
+        <strong id="updLatest">—</strong>
+      </div>
+      <div id="updStatus" class="upd-status"></div>
+      <div id="updActions" class="upd-actions"></div>
+      <div class="modal-actions">
+        <button id="closeUpdateBtn">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

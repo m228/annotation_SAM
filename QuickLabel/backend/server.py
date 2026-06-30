@@ -751,35 +751,27 @@ def get_version():
 @app.get("/api/update/check")
 def check_update():
     """Check GitHub Releases for a newer version. Non-blocking; fails gracefully."""
-    import json as _json
-    import urllib.error
-    import urllib.request
-    current = read_version()
-    try:
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        req = urllib.request.Request(url, headers={"User-Agent": "QuickLabel/" + current})
-        with urllib.request.urlopen(req, timeout=6) as r:
-            data = _json.loads(r.read().decode())
-        tag = data.get("tag_name", "").lstrip("v")
-        asset = next(
-            (a for a in data.get("assets", []) if a["name"].endswith(".zip")),
-            None,
-        )
-        return {
-            "current_version": current,
-            "latest_version": tag or current,
-            "update_available": bool(tag) and tag != current,
-            "release_url": data.get("html_url", ""),
-            "download_url": asset["browser_download_url"] if asset else "",
-            "release_name": data.get("name", ""),
-        }
-    except Exception as exc:
-        return {
-            "current_version": current,
-            "latest_version": None,
-            "update_available": False,
-            "error": str(exc),
-        }
+    from . import updater
+    return updater.check_latest()
+
+
+@app.get("/api/update/download")
+def download_update():
+    """Download the latest release zip into the staging area (frozen bundle only)."""
+    from . import updater
+    return updater.download_latest()
+
+
+@app.get("/api/update/apply")
+def apply_update():
+    """Launch the detached PowerShell updater, then exit so it can replace our files."""
+    import threading
+    from . import updater
+    result = updater.apply_update()
+    if result.get("ok"):
+        # Let the HTTP response reach the client before we exit
+        threading.Timer(2.0, lambda: os._exit(0)).start()
+    return result
 
 
 @app.get("/api/health")

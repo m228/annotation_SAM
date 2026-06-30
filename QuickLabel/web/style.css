@@ -215,6 +215,18 @@ input[type="color"].class-color::-webkit-color-swatch { border: none; border-rad
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .export-result { font-size: 13px; color: var(--accent2); white-space: pre-wrap; }
 
+/* ── Update modal ── */
+.update-modal-card { width: 360px; }
+.update-ver-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.update-ver-row strong { font-size: 15px; }
+.upd-status { min-height: 24px; font-size: 13px; }
+.upd-status.ok    { color: var(--accent2); }
+.upd-status.warn  { color: #f5c400; }
+.upd-status.error { color: var(--danger); }
+.upd-actions { display: flex; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.upd-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── SAM 3 SAHI toolbar menu ── */
 .sahi-menu { position: relative; display: inline-block; }
 #sahiToggleBtn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
