@@ -20,8 +20,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .config import (WEB_DIR, HOST, PORT, QUICKLABEL_DIR, IMAGE_EXTENSIONS,
-                     ensure_ml_backend_importable)
+from .config import (WEB_DIR, HOST, PORT, QUICKLABEL_DIR, BUNDLE_DIR,
+                     IMAGE_EXTENSIONS, GITHUB_REPO,
+                     read_version, find_python_executable, ensure_ml_backend_importable)
 from .store import ProjectStore
 from .sam_runtime import runtime
 from .jobs import manager
@@ -623,8 +624,9 @@ def delete_trained_model(slug: str, run_id: str):
 def _run_predict_subprocess(cfg: dict) -> dict:
     """Run the one-shot inference service and return its JSON result."""
     ensure_ml_backend_importable()
+    python = find_python_executable()
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(QUICKLABEL_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(BUNDLE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
@@ -632,7 +634,7 @@ def _run_predict_subprocess(cfg: dict) -> dict:
         cfg_path = f.name
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "ml_backend", "predict", "--config", cfg_path],
+            [python, "-m", "ml_backend", "predict", "--config", cfg_path],
             cwd=str(QUICKLABEL_DIR), env=env, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=900,
         )
@@ -739,6 +741,18 @@ def validate_model(slug: str, run_id: str, body: PredictReq):
     res["total_val"] = len(val_imgs)
     res["shown"] = min(limit, len(val_imgs))
     return res
+
+
+@app.get("/api/version")
+def get_version():
+    return {"version": read_version()}
+
+
+@app.get("/api/update/check")
+def check_update():
+    """Check GitHub Releases for a newer version. Non-blocking; fails gracefully."""
+    from . import updater
+    return updater.check_latest()
 
 
 @app.get("/api/health")

@@ -16,6 +16,10 @@
       <button id="delProjectBtn" title="Удалить выбранный проект" disabled>🗑 Удалить</button>
     </div>
     <div class="spacer"></div>
+    <div class="update-wrap">
+      <button id="updateBtn" class="update-dot checking" title="Проверка обновлений…" disabled></button>
+      <button id="updateDownloadBtn" class="update-download hidden">↓ Скачать обновление</button>
+    </div>
     <span id="samStatus" class="sam-status" title="Статус AI">AI: …</span>
     <div class="export-menu">
       <button id="exportBtn" class="primary" disabled>Экспорт ▾</button>
@@ -420,6 +424,26 @@
       </div>
       <div id="valStatus" class="muted small"></div>
       <div id="valGrid" class="val-grid"></div>
+    </div>
+  </div>
+
+  <!-- ── Update modal ────────────────────────────────────────────── -->
+  <div id="updateModal" class="modal hidden">
+    <div class="modal-card update-modal-card">
+      <h3>Обновление QuickLabel</h3>
+      <div class="update-ver-row">
+        <span class="muted small">Установлена:</span>
+        <strong id="updCurrent">—</strong>
+      </div>
+      <div class="update-ver-row">
+        <span class="muted small">Доступна:</span>
+        <strong id="updLatest">—</strong>
+      </div>
+      <div id="updStatus" class="upd-status"></div>
+      <div id="updActions" class="upd-actions"></div>
+      <div class="modal-actions">
+        <button id="closeUpdateBtn">Закрыть</button>
+      </div>
     </div>
   </div>
 

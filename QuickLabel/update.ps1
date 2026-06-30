@@ -1,11 +1,16 @@
-# QuickLabel updater (UTF-8 with BOM required for PowerShell 5.1 on Russian Windows)
-# Downloads the latest release from GitHub and extracts it alongside this script,
+# QuickLabel updater (ASCII only - safe for PowerShell 5.1 on Russian Windows)
+# Downloads a release from GitHub and extracts it alongside this script,
 # replacing QuickLabel.exe and source code but keeping .venv, models, and projects.
 #
-# Usage: .\update.ps1
-#   or:  .\update.ps1 -Force   (skip version check)
+# Usage:
+#   .\update.ps1                 interactive: ask which version (Enter = latest)
+#   .\update.ps1 -Version 1.0.3  download exactly v1.0.3 (with or without leading "v")
+#   .\update.ps1 -Force          install latest even if it equals the installed version
 
-param([switch]$Force)
+param(
+    [string]$Version,
+    [switch]$Force
+)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -20,12 +25,33 @@ function Get-LocalVersion {
 }
 
 Write-Host "QuickLabel Updater" -ForegroundColor Cyan
-Write-Host "Checking latest release on github.com/$Repo ..."
+
+# ── Pick a target version ─────────────────────────────────────────────────────
+# No -Version given and not -Force => ask. Empty answer = latest release.
+if (-not $Version -and -not $Force) {
+    Write-Host ""
+    Write-Host "Enter version to install (e.g. 1.0.3), or press Enter for the latest:" -ForegroundColor Yellow
+    $Version = (Read-Host "Version").Trim()
+}
+$Version = $Version.TrimStart("v", "V")   # accept both "v1.0.3" and "1.0.3"
+
+if ($Version) {
+    $Tag = "v$Version"
+    Write-Host "Fetching release $Tag from github.com/$Repo ..."
+    $Url = "$ApiBase/releases/tags/$Tag"
+} else {
+    Write-Host "Fetching the latest release from github.com/$Repo ..."
+    $Url = "$ApiBase/releases/latest"
+}
 
 try {
-    $Release = Invoke-RestMethod "$ApiBase/releases/latest" -ErrorAction Stop
+    $Release = Invoke-RestMethod $Url -ErrorAction Stop
 } catch {
-    Write-Host "ERROR: Cannot reach GitHub. Check your internet connection." -ForegroundColor Red
+    if ($Version) {
+        Write-Host "ERROR: Release $Tag not found. Check the version number and try again." -ForegroundColor Red
+    } else {
+        Write-Host "ERROR: Cannot reach GitHub. Check your internet connection." -ForegroundColor Red
+    }
     Write-Host $_.Exception.Message
     pause
     exit 1
@@ -36,12 +62,12 @@ $LatestVer = $LatestTag.TrimStart("v")
 $LocalVer  = Get-LocalVersion
 
 Write-Host "  Installed : v$LocalVer"
-Write-Host "  Available : $LatestTag"
+Write-Host "  Selected  : $LatestTag"
 
 if (-not $Force -and $LatestVer -eq $LocalVer) {
-    Write-Host "`nAlready up to date." -ForegroundColor Green
-    pause
-    exit 0
+    Write-Host "`nAlready on v$LocalVer." -ForegroundColor Green
+    $ans = (Read-Host "Reinstall anyway? (y/N)").Trim()
+    if ($ans -ne "y" -and $ans -ne "Y") { exit 0 }
 }
 
 # Find the zip asset (name starts with "QuickLabel_")

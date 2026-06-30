@@ -1238,6 +1238,8 @@ function init() {
   setTool("select");
   loadProjects();
   checkHealth();
+  checkForUpdates();
+  initUpdateModal();
 }
 
 // ══════════════ Training page ══════════════
@@ -1830,6 +1832,89 @@ async function runValidation() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ── Update check + in-app updater ─────────────────────────────────
+
+let _updData = null;   // last result from /api/update/check
+
+async function checkForUpdates() {
+  const dot = $("updateBtn");
+  const dlBtn = $("updateDownloadBtn");
+  try {
+    const d = await api("GET", "/api/update/check");
+    _updData = d;
+    dot.disabled = false;
+    if (d.error) {
+      dot.className = "update-dot error";
+      dot.title = `Не удалось проверить обновления: ${d.error}`;
+      return;
+    }
+    if (d.update_available) {
+      dot.className = "update-dot available";
+      dot.title = `Доступно обновление v${d.latest_version} (установлено: v${d.current_version})`;
+      dlBtn.classList.remove("hidden");
+      dlBtn.onclick = () => openUpdateModal();
+    } else {
+      dot.className = "update-dot ok";
+      dot.title = `QuickLabel v${d.current_version} — последняя версия`;
+      dlBtn.classList.add("hidden");
+    }
+  } catch {
+    dot.disabled = false;
+    dot.className = "update-dot error";
+    dot.title = "Ошибка проверки обновлений";
+  }
+}
+
+const RELEASES_URL = "https://github.com/m228/annotation_SAM/releases";
+
+function openUpdateModal() {
+  const d = _updData;
+  $("updCurrent").textContent = d ? `v${d.current_version}` : "—";
+  $("updLatest").textContent  = d ? (d.latest_version ? `v${d.latest_version}` : "—") : "—";
+  setUpdStatus("", "");
+  clearUpdActions();
+  if (d && d.update_available) {
+    setUpdStatus("Доступна новая версия — скачайте её на странице релизов GitHub", "warn");
+    addUpdBtn("Открыть страницу релизов", "primary", openReleasesPage);
+  } else if (d && !d.error) {
+    setUpdStatus("Установлена последняя версия", "ok");
+    addUpdBtn("Открыть страницу релизов", "", openReleasesPage);
+  } else if (d && d.error) {
+    setUpdStatus(d.error, "error");
+    addUpdBtn("Открыть страницу релизов", "", openReleasesPage);
+  } else {
+    addUpdBtn("Открыть страницу релизов", "", openReleasesPage);
+  }
+  $("updateModal").classList.remove("hidden");
+}
+
+function openReleasesPage() {
+  window.open(RELEASES_URL, "_blank", "noopener");
+}
+
+function setUpdStatus(msg, cls) {
+  const el = $("updStatus");
+  el.textContent = msg;
+  el.className = "upd-status" + (cls ? " " + cls : "");
+}
+
+function clearUpdActions() { $("updActions").innerHTML = ""; }
+
+function addUpdBtn(label, cls, handler) {
+  const btn = document.createElement("button");
+  btn.className = cls;
+  btn.textContent = label;
+  btn.onclick = handler;
+  $("updActions").appendChild(btn);
+  return btn;
+}
+
+function initUpdateModal() {
+  $("closeUpdateBtn").addEventListener("click", () => {
+    $("updateModal").classList.add("hidden");
+  });
 }
 
 init();
