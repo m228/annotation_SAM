@@ -1,0 +1,95 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Read version
+        id: version
+        shell: powershell
+        run: |
+          $v = (Get-Content QuickLabel\VERSION -Raw).Trim()
+          echo "VERSION=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build launcher exe
+        shell: powershell
+        run: |
+          $Root = "QuickLabel"
+          $Dist = "$Root\dist"
+          New-Item -ItemType Directory -Force $Dist | Out-Null
+          pyinstaller `
+            --onefile `
+            --console `
+            --name QuickLabel `
+            --workpath "$Root\build" `
+            --distpath $Dist `
+            --specpath "$Root\build" `
+            --noconfirm `
+            "$Root\launcher.py"
+          Copy-Item "$Dist\QuickLabel.exe" "$Root\QuickLabel.exe" -Force
+
+      - name: Package release zip
+        shell: powershell
+        run: |
+          $Root    = "QuickLabel"
+          $Version = "${{ steps.version.outputs.VERSION }}"
+          $ZipName = "QuickLabel_v$Version.zip"
+          $ZipPath = "$Root\dist\$ZipName"
+
+          $Include = @(
+            "QuickLabel.exe", "launcher.py", "requirements.txt",
+            "setup.ps1", "run.ps1", "run.bat",
+            "update.ps1", "update.bat",
+            "VERSION", "README.md",
+            "backend", "ml_backend", "web", "projects"
+          )
+
+          $Stage = "$Root\dist\stage"
+          if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
+          New-Item -ItemType Directory "$Stage\QuickLabel" | Out-Null
+
+          foreach ($Item in $Include) {
+            $Src = "$Root\$Item"
+            if (-not (Test-Path $Src)) { continue }
+            $Dst = "$Stage\QuickLabel\$Item"
+            if ((Get-Item $Src).PSIsContainer) {
+              Copy-Item $Src $Dst -Recurse -Force
+              Get-ChildItem $Dst -Recurse -Filter "__pycache__" -Directory |
+                Remove-Item -Recurse -Force
+              Get-ChildItem $Dst -Recurse -Filter "_train" -Directory |
+                Remove-Item -Recurse -Force
+            } else {
+              Copy-Item $Src $Dst -Force
+            }
+          }
+
+          Compress-Archive -Path "$Stage\*" -DestinationPath $ZipPath
+          Remove-Item $Stage -Recurse -Force
+          echo "ZIP_PATH=$ZipPath" >> $env:GITHUB_ENV
+          echo "ZIP_NAME=$ZipName" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "QuickLabel v${{ steps.version.outputs.VERSION }}"
+          generate_release_notes: true
+          files: QuickLabel/dist/${{ env.ZIP_NAME }}

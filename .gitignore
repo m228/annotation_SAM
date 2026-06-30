@@ -1,4 +1,51 @@
-/VisoLabel
+# ── IDE & OS ─────────────────────────────────────────────────────
+/.idea
+.DS_Store
+Thumbs.db
+
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Virtual envs ─────────────────────────────────────────────────
+/.venv
+/QuickLabel/.venv
+/QuickLabel/venv
+/VisoLabel/.venv
+/VisoLabel/venv
+
+# ── Large binary assets (not in repo — distributed separately) ───
 /QuickLabel/wheels
 /QuickLabel/models
-/.idea
+/QuickLabel/*.pt
+/QuickLabel/rf-detr*.pt
+/QuickLabel/yolo*.pt
+
+# ── PyInstaller build artifacts ───────────────────────────────────
+/QuickLabel/build
+/QuickLabel/dist
+/QuickLabel/QuickLabel.exe
+
+# ── Project user data (images & generated training runs) ─────────
+# Keep project.json config; skip heavy image & training folders
+QuickLabel/projects/*/_train/
+QuickLabel/projects/*/images/
+
+# Test/scratch projects (large annotation blobs, not real data)
+QuickLabel/projects/12/
+QuickLabel/projects/123/
+QuickLabel/projects/new/
+
+# ── Logs & scratch ───────────────────────────────────────────────
+/QuickLabel/flow.txt
+/QuickLabel/flow_err.txt
+/analyz
+
+# ── Excluded sub-repos ───────────────────────────────────────────
+/VisoLabel
